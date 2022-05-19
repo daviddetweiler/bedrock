@@ -43,8 +43,11 @@ constraints, VMs often bear little resemblance to the machine architectures they
 
 ### Instruction set
 ```
+interrupt
+jump			; Relative, but from a register (and conditional on a second), also links
+
 move
-move_immediate
+set_register	; Basically a load immediate
 
 load
 store
@@ -58,12 +61,7 @@ shift_left
 shift_right
 shift_extend
 
-and
-or
-not
-
-jump ; Relative, but from a register (and conditional on a second), also links
-
-interrupt
-
+logic_and
+logic_or
+logic_not
 ```
