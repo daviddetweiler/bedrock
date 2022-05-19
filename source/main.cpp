@@ -73,13 +73,25 @@ namespace bedrock {
 		enum class interrupt : std::uint8_t { halt, extend = 255 };
 
 		struct instruction_word {
-			opcode op : 4;
-			std::uint8_t destination : 4;
-			std::uint8_t source1 : 4;
-			std::uint8_t source0 : 4;
+			opcode op;
+			std::uint8_t dst;
+			std::uint8_t src1;
+			std::uint8_t src0;
 		};
 
-		static_assert(sizeof(instruction_word) == 2);
+		instruction_word decode(std::uint16_t word) noexcept
+		{
+			// Endianness BS
+			const auto src1 = (word & 0xf000) >> 12;
+			const auto src0 = (word & 0x0f00) >> 8;
+			const auto op = (word & 0x00f0) >> 4;
+			const auto dst = word & 0x000f;
+			return {
+				static_cast<opcode>(op),
+				gsl::narrow_cast<std::uint8_t>(dst),
+				gsl::narrow_cast<std::uint8_t>(src1),
+				gsl::narrow_cast<std::uint8_t>(src0)};
+		}
 
 		struct machine_state {
 			std::uint16_t program_counter;
@@ -89,20 +101,16 @@ namespace bedrock {
 			machine_state() : program_counter {}, registers {}, memory(1 << 16) {}
 		};
 
-		void dump(const machine_state& state, bool enable_single_step)
+		void dump(const machine_state& state)
 		{
-			if (!enable_single_step)
-				return;
-
 			const auto& [pc, regs, memory] = state;
+			std::cout << "\x1b[2J\x1b[H";
 			std::cout << std::format("pc = {:#06x} ({:#06x})\n", pc, memory[pc]);
 			auto i = 0u;
 			for (const auto reg : regs) {
-				std::cout << std::format("r{} = {:#06x} ({:#06x})\n", i, regs[i], memory[regs[i]]);
+				std::cout << std::format("r{:x} = {:#06x} ({:#06x})\n", i, regs[i], memory[regs[i]]);
 				++i;
 			}
-
-			std::cin.get();
 		}
 
 		void execute(machine_state& state, bool enable_single_step)
@@ -110,11 +118,19 @@ namespace bedrock {
 			auto halt = false;
 			auto& [pc, regs, memory] = state;
 
-			dump(state, enable_single_step);
 			while (!halt) {
-				instruction_word instr {};
-				std::memcpy(&instr, &memory[pc++], 2);
-				const auto [op, dst, src1, src0] = instr;
+				if (enable_single_step)
+					dump(state);
+
+				const auto [op, dst, src1, src0] = decode(memory[pc++]);
+
+				if (enable_single_step) {
+					std::cout
+						<< std::format("{:x}: {:x}, {:x} -> {:x}", static_cast<std::uint8_t>(op), src1, src0, dst);
+
+					std::cin.get();
+				}
+
 				switch (op) {
 				case opcode::interrupt:
 					switch (static_cast<interrupt>(dst)) {
@@ -130,8 +146,8 @@ namespace bedrock {
 
 				case opcode::jump:
 					if (regs[src1]) {
-						regs[dst] = pc + 1;
-						pc += regs[src0];
+						regs[dst] = pc;
+						pc = regs[src0];
 					}
 
 					break;
@@ -192,8 +208,6 @@ namespace bedrock {
 					regs[dst] = ~regs[src0];
 					break;
 				}
-
-				dump(state, enable_single_step);
 			}
 		}
 	}
@@ -215,5 +229,6 @@ int main(int argc, char** argv)
 		return 1;
 	}
 
-	execute(state, true);
+	execute(state, false);
+	dump(state);
 }
