@@ -1,5 +1,6 @@
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <format>
 #include <fstream>
 #include <iostream>
@@ -67,11 +68,9 @@ namespace bedrock {
 			logic_or,
 			logic_not,
 
-			tape_in,
-			tape_out
+			terminal,
+			disk
 		};
-
-		enum class interrupt : std::uint8_t { halt, tape_in, tape_out, extend = 255 };
 
 		struct instruction_word {
 			opcode op;
@@ -95,21 +94,27 @@ namespace bedrock {
 		}
 
 		struct machine_state {
-			std::uint16_t program_counter;
-			std::array<std::uint16_t, 1 << 4> registers;
+			std::uint16_t pc;
+			std::array<std::uint16_t, 1 << 4> regs;
 			std::vector<std::uint16_t> memory;
+			std::fstream disk;
 
-			machine_state() : program_counter {}, registers {}, memory(1 << 16) {}
+			machine_state(const std::filesystem::path& disk_file) :
+				pc {},
+				regs {},
+				memory(1 << 16),
+				disk {disk_file, disk.binary}
+			{
+			}
 		};
 
 		void dump(const machine_state& state)
 		{
-			const auto& [pc, regs, memory] = state;
 			std::cout << "\x1b[2J\x1b[H";
-			std::cout << std::format("pc = {:#06x} ({:#06x})\n", pc, memory[pc]);
+			std::cout << std::format("pc = {:#06x} ({:#06x})\n", state.pc, state.memory[state.pc]);
 			auto i = 0u;
-			for (const auto reg : regs) {
-				std::cout << std::format("r{:x} = {:#06x} ({:#06x})\n", i, regs[i], memory[regs[i]]);
+			for (const auto reg : state.regs) {
+				std::cout << std::format("r{:x} = {:#06x} ({:#06x})\n", i, state.regs[i], state.memory[state.regs[i]]);
 				++i;
 			}
 		}
@@ -117,7 +122,7 @@ namespace bedrock {
 		void execute(machine_state& state, bool enable_single_step)
 		{
 			auto halt = false;
-			auto& [pc, regs, memory] = state;
+			auto& [pc, regs, memory, disk] = state;
 
 			while (!halt) {
 				if (enable_single_step)
@@ -193,34 +198,28 @@ namespace bedrock {
 					regs[dst] = ~regs[src0];
 					break;
 
-				case opcode::tape_in:
+				case opcode::terminal:
+					if (src1)
+						regs[dst] = std::cin.get();
+					else
+						std::cout.put(regs[src0]);
+
 					break;
 
-				case opcode::tape_out:
-					for (auto i = 0u; i < regs[src1]; ++i) {
-						const auto cell = memory[regs[src0]];
-						const auto b = cell & 0xff;
-						const auto a = (cell & 0xff00) >> 8;
-						if (a == 0x4) {
-							halt = true;
-							break;
-						}
-
-						std::cout.put(a);
-
-						++i;
-						if (i == regs[src1])
-							break;
-
-						if (b == 0x4) {
-							halt = true;
-							break;
-						}
-
-						std::cout.put(b);
+				case opcode::disk: {
+					const auto dst_address = regs[dst];
+					// Why not 511? Because RAM is word-addressed
+					if (dst_address & 255) {
+						halt = true;
+						break;
 					}
 
-					break;
+					disk.seekg(regs[src0] * 512);
+					if (src1)
+						disk.write(reinterpret_cast<char*>(&memory[dst_address]), 512);
+					else
+						disk.read(reinterpret_cast<char*>(&memory[dst_address]), 512);
+				}
 				}
 			}
 		}
@@ -232,12 +231,19 @@ using namespace bedrock;
 int main(int argc, char** argv)
 {
 	const gsl::span arguments {argv, gsl::narrow<std::size_t>(argc)};
-	if (argc != 2) {
-		std::cerr << "Usage: vm <image>\n";
+	if (argc != 3) {
+		std::cerr << "Usage: vm <image> <disk>\n";
 		return 1;
 	}
 
-	machine_state state {};
+	std::filesystem::path path {arguments[2]};
+	constexpr auto disk_size = 512 * (1 << 16);
+	if (std::filesystem::file_size(path) != 512 * (1 << 16)) {
+		std::cerr << "Disk must be " << disk_size << " bytes\n";
+		return 1;
+	}
+
+	machine_state state {path};
 	if (!try_read_file(arguments[1], gsl::as_writable_bytes(gsl::span {state.memory}))) {
 		std::cerr << "Couldn't load image file '" << arguments[1] << "'\n";
 		return 1;

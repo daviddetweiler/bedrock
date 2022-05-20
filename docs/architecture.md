@@ -45,3 +45,11 @@ constraints, VMs often bear little resemblance to the machine architectures they
 Forth has many issues, but it is the ideal self-bootstrapping system. In fact: I have a better idea. A machine-code
 program that reads in characters on input, assuming they are capital hexadecimal digits. It writes them out as bytes
 into memory, then upon encountering an `X`, jumps to the code. Great for self-bootstrapping and incredibly simple.
+
+### Peripherals!
+- Should have a terminal
+	- Is it functionally a serial line? I.e. single-byte? Yes!
+- Should have internal storage
+	- Old-school sector addressing
+	- Programs too big to fit in RAM shall be handled by overlays
+- The two unassigned instructions are for peripheral ops
