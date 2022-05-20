@@ -41,27 +41,7 @@ constraints, VMs often bear little resemblance to the machine architectures they
 +--------+-------------+----------+----------+
 ```
 
-### Instruction set
-```
-interrupt
-jump			; Relative, but from a register (and conditional on a second), also links
-
-move
-set_register	; Basically a load immediate
-
-load
-store
-
-add
-subtract
-multiply
-divide
-
-shift_left
-shift_right
-shift_extend
-
-logic_and
-logic_or
-logic_not
-```
+### Bootstrapping
+Forth has many issues, but it is the ideal self-bootstrapping system. In fact: I have a better idea. A machine-code
+program that reads in characters on input, assuming they are capital hexadecimal digits. It writes them out as bytes
+into memory, then upon encountering an `X`, jumps to the code. Great for self-bootstrapping and incredibly simple.
