@@ -10,12 +10,8 @@ def main():
     with open(sys.argv[1], 'r') as source:
         with open(sys.argv[2], 'wb') as bin:
             for line in source.readlines():
-                line = line.strip()
-                if not len(line):
-                    continue
-
-                value = int(line, 16)
-                bin.write(struct.pack('>H', value))
+                for word in line.split():
+                    bin.write(struct.pack('B', int(word, base=16)))
 
 
 if __name__ == '__main__':

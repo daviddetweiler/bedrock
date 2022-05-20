@@ -42,7 +42,6 @@ namespace bedrock {
 		// 0 register
 
 		enum class opcode : std::uint8_t {
-			interrupt, // destination register is actually the interupt number, two source registers are parameters
 			jump, // Stores next instruction address in destination, conditional on second source
 
 			move, // One destination, one source
@@ -62,15 +61,17 @@ namespace bedrock {
 			// 4-bit immediate shift size instead of second source (16-bit registers!)
 			shift_left,
 			shift_right,
-			shift_extend,
 
 			// Three-register ALU ops
 			logic_and,
 			logic_or,
-			logic_not
+			logic_not,
+
+			tape_in,
+			tape_out
 		};
 
-		enum class interrupt : std::uint8_t { halt, extend = 255 };
+		enum class interrupt : std::uint8_t { halt, tape_in, tape_out, extend = 255 };
 
 		struct instruction_word {
 			opcode op;
@@ -132,18 +133,6 @@ namespace bedrock {
 				}
 
 				switch (op) {
-				case opcode::interrupt:
-					switch (static_cast<interrupt>(dst)) {
-					case interrupt::halt:
-						halt = true;
-						break;
-
-					default:
-						break;
-					}
-
-					break;
-
 				case opcode::jump:
 					if (regs[src1]) {
 						regs[dst] = pc;
@@ -157,7 +146,7 @@ namespace bedrock {
 					break;
 
 				case opcode::set:
-					regs[dst] = src1 << 4 | src0;
+					regs[dst] |= src1 << 4 | src0;
 					break;
 
 				case opcode::load:
@@ -192,10 +181,6 @@ namespace bedrock {
 					regs[dst] = regs[src0] >> src1;
 					break;
 
-				case opcode::shift_extend:
-					regs[dst] = static_cast<std::int16_t>(regs[src0]) >> src1;
-					break;
-
 				case opcode::logic_and:
 					regs[dst] = regs[src0] & regs[src1];
 					break;
@@ -206,6 +191,35 @@ namespace bedrock {
 
 				case opcode::logic_not:
 					regs[dst] = ~regs[src0];
+					break;
+
+				case opcode::tape_in:
+					break;
+
+				case opcode::tape_out:
+					for (auto i = 0u; i < regs[src1]; ++i) {
+						const auto cell = memory[regs[src0]];
+						const auto b = cell & 0xff;
+						const auto a = (cell & 0xff00) >> 8;
+						if (a == 0x4) {
+							halt = true;
+							break;
+						}
+
+						std::cout.put(a);
+
+						++i;
+						if (i == regs[src1])
+							break;
+
+						if (b == 0x4) {
+							halt = true;
+							break;
+						}
+
+						std::cout.put(b);
+					}
+
 					break;
 				}
 			}
@@ -230,5 +244,4 @@ int main(int argc, char** argv)
 	}
 
 	execute(state, false);
-	dump(state);
 }
