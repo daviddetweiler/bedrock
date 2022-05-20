@@ -1,5 +1,7 @@
+#include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <format>
 #include <fstream>
@@ -10,64 +12,21 @@
 
 namespace bedrock {
 	namespace {
-		bool try_read_file(gsl::czstring filename, gsl::span<std::byte> destination)
-		{
-			std::ifstream file {filename, file.ate | file.binary};
-			try {
-				file.exceptions(file.badbit | file.failbit);
-				const auto size = file.tellg();
-				if (size >= destination.size()) {
-					std::cerr << std::format(
-						"File too large for destination buffer ({}, {})\n",
-						gsl::narrow<std::size_t>(size),
-						destination.size());
-
-					return false;
-				}
-
-				file.seekg(file.beg);
-				file.read(reinterpret_cast<char*>(destination.data()), size);
-			}
-			catch (const std::exception& error) {
-				std::cerr << "Exception while reading file: '" << error.what() << "'\n";
-				return false;
-			}
-
-			return true;
-		}
-
-		// 8-bit opcodes
-		// 8-bit register IDs
-		// 16-bit registers
-		// Only unsigned math for now lol
-		// 0 register
-
 		enum class opcode : std::uint8_t {
-			jump, // Stores next instruction address in destination, conditional on second source
-
-			move, // One destination, one source
-			set, // Source registers byte is the immediate value
-
-			// Aligned, word-addressed (doubles address space); only instructions that allow padding bits (these must be
-			// zeroed)
-			load, // Only the two source registers (value, address)
-			store, // destination, address
-
-			// Three-register ALU ops
+			jump,
+			move,
+			set,
+			load,
+			store,
 			add,
 			subtract,
 			multiply,
 			divide,
-
-			// 4-bit immediate shift size instead of second source (16-bit registers!)
 			shift_left,
 			shift_right,
-
-			// Three-register ALU ops
 			logic_and,
 			logic_or,
 			logic_not,
-
 			terminal,
 			disk
 		};
@@ -79,13 +38,29 @@ namespace bedrock {
 			std::uint8_t src0;
 		};
 
+		struct machine_state {
+			std::uint16_t pc;
+			std::array<std::uint16_t, 1 << 4> regs;
+			std::vector<std::uint16_t> memory;
+			std::fstream disk;
+
+			machine_state(const std::filesystem::path& disk_file) : pc {}, regs {}, memory(1 << 16), disk {}
+			{
+				disk.exceptions(disk.badbit | disk.failbit);
+				disk.open(disk_file, disk.binary | disk.in | disk.out);
+			}
+		};
+
+		constexpr auto word_size = sizeof(std::uint16_t);
+		constexpr auto sector_size = 512;
+		constexpr auto disk_size = sector_size * (1 << 16);
+
 		instruction_word decode(std::uint16_t word) noexcept
 		{
-			// Endianness BS
-			const auto src1 = (word & 0xf000) >> 12;
-			const auto src0 = (word & 0x0f00) >> 8;
-			const auto op = (word & 0x00f0) >> 4;
-			const auto dst = word & 0x000f;
+			const auto op = (word & 0xf000) >> 12;
+			const auto dst = (word & 0x0f00) >> 8;
+			const auto src1 = (word & 0x00f0) >> 4;
+			const auto src0 = word & 0x000f;
 			return {
 				static_cast<opcode>(op),
 				gsl::narrow_cast<std::uint8_t>(dst),
@@ -93,50 +68,12 @@ namespace bedrock {
 				gsl::narrow_cast<std::uint8_t>(src0)};
 		}
 
-		struct machine_state {
-			std::uint16_t pc;
-			std::array<std::uint16_t, 1 << 4> regs;
-			std::vector<std::uint16_t> memory;
-			std::fstream disk;
-
-			machine_state(const std::filesystem::path& disk_file) :
-				pc {},
-				regs {},
-				memory(1 << 16),
-				disk {disk_file, disk.binary}
-			{
-			}
-		};
-
-		void dump(const machine_state& state)
-		{
-			std::cout << "\x1b[2J\x1b[H";
-			std::cout << std::format("pc = {:#06x} ({:#06x})\n", state.pc, state.memory[state.pc]);
-			auto i = 0u;
-			for (const auto reg : state.regs) {
-				std::cout << std::format("r{:x} = {:#06x} ({:#06x})\n", i, state.regs[i], state.memory[state.regs[i]]);
-				++i;
-			}
-		}
-
-		void execute(machine_state& state, bool enable_single_step)
+		void execute(machine_state& state)
 		{
 			auto halt = false;
 			auto& [pc, regs, memory, disk] = state;
-
 			while (!halt) {
-				if (enable_single_step)
-					dump(state);
-
 				const auto [op, dst, src1, src0] = decode(memory[pc++]);
-
-				if (enable_single_step) {
-					std::cout
-						<< std::format("{:x}: {:x}, {:x} -> {:x}", static_cast<std::uint8_t>(op), src1, src0, dst);
-
-					std::cin.get();
-				}
-
 				switch (op) {
 				case opcode::jump:
 					if (regs[src1]) {
@@ -151,7 +88,7 @@ namespace bedrock {
 					break;
 
 				case opcode::set:
-					regs[dst] |= src1 << 4 | src0;
+					regs[dst] = src1 << 4 | src0;
 					break;
 
 				case opcode::load:
@@ -200,29 +137,53 @@ namespace bedrock {
 
 				case opcode::terminal:
 					if (src1)
-						regs[dst] = std::cin.get();
-					else
 						std::cout.put(regs[src0]);
+					else
+						regs[dst] = std::cin.get();
 
 					break;
 
 				case opcode::disk: {
 					const auto dst_address = regs[dst];
 					// Why not 511? Because RAM is word-addressed
-					if (dst_address & 255) {
+					if (dst_address & ((sector_size / word_size) - 1)) {
 						halt = true;
 						break;
 					}
 
-					disk.seekg(regs[src0] * 512);
+					disk.seekg(regs[src0] * sector_size);
 					if (src1)
-						disk.write(reinterpret_cast<char*>(&memory[dst_address]), 512);
+						disk.write(reinterpret_cast<char*>(&memory[dst_address]), sector_size);
 					else
-						disk.read(reinterpret_cast<char*>(&memory[dst_address]), 512);
+						disk.read(reinterpret_cast<char*>(&memory[dst_address]), sector_size);
 				}
 				}
 			}
 		}
+
+		constexpr std::array<std::uint16_t, sector_size / word_size> boot_sector {
+			// Set cursor to home
+			0x211B,
+			0xE011,
+			0x215B,
+			0xE011,
+			0x2148,
+			0xE011,
+
+			// Clear terminal
+			0x211B,
+			0xE011,
+			0x215B,
+			0xE011,
+			0x2132,
+			0xE011,
+			0x214A,
+			0xE011,
+			
+			// Halt (by unaligned disk read)
+			0x2001,
+			0xF000,
+		};
 	}
 }
 
@@ -231,23 +192,26 @@ using namespace bedrock;
 int main(int argc, char** argv)
 {
 	const gsl::span arguments {argv, gsl::narrow<std::size_t>(argc)};
-	if (argc != 3) {
-		std::cerr << "Usage: vm <image> <disk>\n";
+	if (argc != 2) {
+		std::cerr << "Usage: vm <disk>\n";
 		return 1;
 	}
 
-	std::filesystem::path path {arguments[2]};
-	constexpr auto disk_size = 512 * (1 << 16);
-	if (std::filesystem::file_size(path) != 512 * (1 << 16)) {
+	const std::filesystem::path path {arguments[1]};
+	if (!std::filesystem::exists(path)) {
+		std::ofstream file {path, file.binary};
+		file.exceptions(file.badbit | file.failbit);
+		file.write(reinterpret_cast<const char*>(boot_sector.data()), boot_sector.size() * word_size);
+		file.seekp(disk_size - 1);
+		file.put('\0');
+	}
+
+	if (std::filesystem::file_size(path) != disk_size) {
 		std::cerr << "Disk must be " << disk_size << " bytes\n";
 		return 1;
 	}
 
 	machine_state state {path};
-	if (!try_read_file(arguments[1], gsl::as_writable_bytes(gsl::span {state.memory}))) {
-		std::cerr << "Couldn't load image file '" << arguments[1] << "'\n";
-		return 1;
-	}
-
-	execute(state, false);
+	state.disk.read(reinterpret_cast<char*>(&state.memory[0]), sector_size);
+	execute(state);
 }
