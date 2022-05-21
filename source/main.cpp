@@ -176,20 +176,20 @@ namespace bedrock {
 		}
 
 		constexpr std::array<std::uint16_t, sector_size / word_size> boot_sector {
-			0x2F58, // set	rf, 0x58 	; rf = 'X'
+			0x2F0A, // set	rf, 0x0a 	; rf = '\n'
 
 			// Wait for input, stash it
 			0xE000, // srl 	r0, 0x0, r0
 			0x1200, // mov	r2, r0
 
-			// Compare to X
+			// Compare to '\n'
 			0xD10F, // not	r1, rf
 			0xB101, // and	r1, r0, r1
 			0xD000, // not	r0, r0
 			0xB00F, // and	r0, r0, rf
-			0xC001, // or	r0, r0, r1	; r0 is zero if char == 'X'
+			0xC001, // or	r0, r0, r1	; r0 is zero if char == '\n'
 
-			// If char did not equal X, skip execute jump
+			// If char did not equal '\n', skip execute jump
 			0x210D, // set	r1, 0xd
 			0x0001, // jmp	r0, r0, r1
 
@@ -213,7 +213,7 @@ namespace bedrock {
 			0x0111, // jmp	r1, r1, r1
 
 			// Compute letter
-			0x2037, // set	r0, 0x37	; r0 = 'A' - 10
+			0x2057, // set	r0, 0x57	; r0 = 'a' - 10
 			0x6002, // sub	r0, r0, r2	; r0 = r2 - r0
 
 			// Shift letter in
@@ -227,7 +227,7 @@ namespace bedrock {
 			0xB00D, // and	r0, r0, rd
 
 			// Skip write while not needed
-			0x2124, // set	r1, 0x24
+			0x2125, // set	r1, 0x25
 			0x0101, // jmp	r1, r0, r1	; if r0 goto r1
 
 			// Write!
@@ -236,6 +236,9 @@ namespace bedrock {
 			0x500C, // add	r0, r0, rc
 			0x40E0, // sto	re, r0
 			0x5C1C, // add	rc, r1, rc
+
+			// Dispose of trailing newline
+			0xE000, // srl 	r0, 0x0, r0
 
 			// Loop!
 			0x2001, // set	r0, 0x1
