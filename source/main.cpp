@@ -1,4 +1,3 @@
-#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -9,6 +8,8 @@
 #include <vector>
 
 #include <gsl/gsl>
+
+#include "constants.h"
 
 namespace bedrock {
 	namespace {
@@ -44,16 +45,15 @@ namespace bedrock {
 			std::vector<std::uint16_t> memory;
 			std::fstream disk;
 
-			machine_state(const std::filesystem::path& disk_file) : pc {}, regs {}, memory(1 << 16), disk {}
+			machine_state(const std::filesystem::path& disk_file) :
+				pc {},
+				regs {},
+				memory(1 << 16),
+				disk {disk_file, disk.binary | disk.in | disk.out}
 			{
 				disk.exceptions(disk.badbit | disk.failbit);
-				disk.open(disk_file, disk.binary | disk.in | disk.out);
 			}
 		};
-
-		constexpr auto word_size = sizeof(std::uint16_t);
-		constexpr auto sector_size = 512;
-		constexpr auto disk_size = sector_size * (1 << 16);
 
 		instruction_word decode(std::uint16_t word) noexcept
 		{
@@ -157,7 +157,7 @@ namespace bedrock {
 				case opcode::dsk: {
 					const auto dst_address = regs[dst];
 					// Why not 511? Because RAM is word-addressed
-					if (dst_address & ((sector_size / word_size) - 1)) {
+					if (dst_address & (words_per_sector - 1)) {
 						halt = true;
 						break;
 					}
@@ -174,233 +174,6 @@ namespace bedrock {
 				}
 			}
 		}
-
-		constexpr std::array<std::uint16_t, sector_size / word_size> boot_sector {
-			0x2029, // set	r0, 0x29
-			0x0000, // jmp	r0, r0, r0
-
-			0x2F0A, // set	rf, 0xa 	; rf = '\n'
-
-			// Wait for input, stash it
-			0xE000, // srl 	r0, 0x0, r0
-			0x1200, // mov	r2, r0
-
-			// Compare to '\n'
-			0xD10F, // not	r1, rf
-			0xB101, // and	r1, r0, r1
-			0xD000, // not	r0, r0
-			0xB00F, // and	r0, r0, rf
-			0xC001, // lor	r0, r0, r1	; r0 is zero if char == '\n'
-
-			// If char did not equal '\n', skip execute jump
-			0x210F, // set	r1, 0xf
-			0x0001, // jmp	r0, r0, r1
-
-			// Jump to code buffer
-			0x2101, // set	r1, 0x1
-			0x9181, // shl	r1, 0x8, r1
-			0x0011, // jmp	r0, r1, r1	; if r1 jump to r1
-
-			// Decide range of character
-			0x203A, // set	r0, 0x3a	; r0 = ':'
-			0x8002, // div	r0, r0, r2	; r0 = r2 / r0 (zero iff. r2 < ':')
-
-			// Jump if not decimal to letter computation
-			0x2117, // set	r1, 0x17
-			0x0101, // jmp	r1, r0, r1	; if r0 goto r1
-
-			// Compute decimal and skip letter computation
-			0x2030, // set	r0, 0x30	; r0 = '0'
-			0x6002, // sub	r0, r0, r2	; r0 = r2 - r0
-			0x2119, // set	r1, 0x19
-			0x0111, // jmp	r1, r1, r1
-
-			// Compute letter
-			0x2037, // set	r0, 0x37	; r0 = 'A' - 10
-			0x6002, // sub	r0, r0, r2	; r0 = r2 - r0
-
-			// Shift letter in
-			0x9E4E, // shl	re, 0x4, re
-			0xCE0E, // lor	re,	r0, re
-
-			// Change state
-			0x2001, // set	r0, 0x1
-			0x5DD0, // add	rd, rd, r0
-			0x2003, // set	r0, 0x3
-			0xB00D, // and	r0, r0, rd
-
-			// Skip write while not needed
-			0x2127, // set	r1, 0x27
-			0x0101, // jmp	r1, r0, r1	; if r0 goto r1
-
-			// Write!
-			0x2101, // set	r1, 0x1
-			0x9081, // shl	r0, 0x8, r1
-			0x500C, // add	r0, r0, rc
-			0x40E0, // sto	re, r0
-			0x5C1C, // add	rc, r1, rc
-
-			// Skip newline
-			0xE000, // srl	r0, 0x0, r0
-
-			// Loop!
-			0x2003, // set	r0, 0x3
-			0x0000, // jmp	r0, r0, r0
-
-			0x2032, // set	r0, 0x32
-			0x3100, // lod	r1, r0
-
-			0xE011, // srl	r0, 0x1, r1
-
-			0x2201, // set	r2, 0x1
-			0x5002, // add	r0, r0, r2
-			0x222A, // set	r2, 0x2a
-			0x0212, // jmp	r2, r1, r2
-
-			0x2002, // set	r0, 0x2
-			0x0000, // jmp	r0, r0, r0
-
-			0x0054,
-			0x0079,
-			0x0070,
-			0x0065,
-			0x0020,
-			0x0069,
-			0x006E,
-			0x0020,
-			0x006F,
-			0x006E,
-			0x0065,
-			0x0020,
-			0x0031,
-			0x0036,
-			0x002D,
-			0x0062,
-			0x0069,
-			0x0074,
-			0x0020,
-			0x0069,
-			0x006E,
-			0x0073,
-			0x0074,
-			0x0072,
-			0x0075,
-			0x0063,
-			0x0074,
-			0x0069,
-			0x006F,
-			0x006E,
-			0x0020,
-			0x0070,
-			0x0065,
-			0x0072,
-			0x0020,
-			0x006C,
-			0x0069,
-			0x006E,
-			0x0065,
-			0x0020,
-			0x0069,
-			0x006E,
-			0x0020,
-			0x0061,
-			0x006C,
-			0x006C,
-			0x002D,
-			0x0063,
-			0x0061,
-			0x0070,
-			0x0073,
-			0x0020,
-			0x0068,
-			0x0065,
-			0x0078,
-			0x0061,
-			0x0064,
-			0x0065,
-			0x0063,
-			0x0069,
-			0x006D,
-			0x0061,
-			0x006C,
-			0x002E,
-			0x0020,
-			0x0042,
-			0x0061,
-			0x0073,
-			0x0065,
-			0x0020,
-			0x0061,
-			0x0064,
-			0x0064,
-			0x0072,
-			0x0065,
-			0x0073,
-			0x0073,
-			0x0020,
-			0x0069,
-			0x0073,
-			0x0020,
-			0x0030,
-			0x0078,
-			0x0031,
-			0x0030,
-			0x0030,
-			0x002E,
-			0x0020,
-			0x0041,
-			0x006E,
-			0x0020,
-			0x0065,
-			0x006D,
-			0x0070,
-			0x0074,
-			0x0079,
-			0x0020,
-			0x006C,
-			0x0069,
-			0x006E,
-			0x0065,
-			0x0020,
-			0x0074,
-			0x0072,
-			0x0061,
-			0x006E,
-			0x0073,
-			0x0066,
-			0x0065,
-			0x0072,
-			0x0073,
-			0x0020,
-			0x0063,
-			0x006F,
-			0x006E,
-			0x0074,
-			0x0072,
-			0x006F,
-			0x006C,
-			0x0020,
-			0x0074,
-			0x006F,
-			0x0020,
-			0x0061,
-			0x0073,
-			0x0073,
-			0x0065,
-			0x006D,
-			0x0062,
-			0x006C,
-			0x0065,
-			0x0064,
-			0x0020,
-			0x0063,
-			0x006F,
-			0x0064,
-			0x0065,
-			0x002E,
-			0x000A,
-			0x000A,
-		};
 	}
 }
 
