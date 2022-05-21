@@ -176,14 +176,13 @@ namespace bedrock {
 		}
 
 		constexpr std::array<std::uint16_t, sector_size / word_size> boot_sector {
-			// Wait for input, stash it
-			0xE000, // srl 	r0, 0x0, r0
-			0x1200, // mov	r2, r0
+			// Wait for input
+			0xE200, // srl 	r2, 0x0, r0
 
 			// If char did not equal '\n', skip execute jump
 			0x210a, // set	r1, 0xa
-			0x6001, // sub	r0, r0, r1	; r0 is zero if char == '\n'
-			0x2109, // set	r1, 0x9
+			0x6021, // sub	r0, r2, r1	; r0 is zero if char == '\n'
+			0x2108, // set	r1, 0x8
 			0x0001, // jmp	r0, r0, r1
 
 			// Jump to code buffer
@@ -196,13 +195,13 @@ namespace bedrock {
 			0x8002, // div	r0, r0, r2	; r0 = r2 / r0 (zero iff. r2 < ':')
 
 			// Jump if not decimal to letter computation
-			0x2111, // set	r1, 0x11
+			0x2110, // set	r1, 0x10
 			0x0101, // jmp	r1, r0, r1	; if r0 goto r1
 
 			// Compute decimal and skip letter computation
 			0x2030, // set	r0, 0x30	; r0 = '0'
 			0x6002, // sub	r0, r0, r2	; r0 = r2 - r0
-			0x2113, // set	r1, 0x13
+			0x2112, // set	r1, 0x12
 			0x0111, // jmp	r1, r1, r1
 
 			// Compute letter
@@ -220,7 +219,7 @@ namespace bedrock {
 			0xB00E, // and	r0, r0, re
 
 			// Skip write while not needed
-			0x2121, // set	r1, 0x21
+			0x2120, // set	r1, 0x20
 			0x0101, // jmp	r1, r0, r1	; if r0 goto r1
 
 			// Write!
