@@ -13,22 +13,22 @@
 namespace bedrock {
 	namespace {
 		enum class opcode : std::uint8_t {
-			jump,
-			move,
+			jmp,
+			mov,
 			set,
-			load,
-			store,
+			lod,
+			sto,
 			add,
-			subtract,
-			multiply,
-			divide,
-			shift_left,
-			shift_right,
-			logic_and,
-			logic_or,
-			logic_not,
-			serial,
-			disk
+			sub,
+			mul,
+			div,
+			shl,
+			shr,
+			And,
+			lor,
+			Not,
+			srl,
+			dsk
 		};
 
 		struct instruction_word {
@@ -75,7 +75,7 @@ namespace bedrock {
 			while (!halt) {
 				const auto [op, dst, src1, src0] = decode(memory[pc++]);
 				switch (op) {
-				case opcode::jump:
+				case opcode::jmp:
 					if (regs[src1]) {
 						const auto old_pc = pc;
 						pc = regs[src0];
@@ -84,7 +84,7 @@ namespace bedrock {
 
 					break;
 
-				case opcode::move:
+				case opcode::mov:
 					regs[dst] = regs[src0];
 					break;
 
@@ -92,11 +92,11 @@ namespace bedrock {
 					regs[dst] = src1 << 4 | src0;
 					break;
 
-				case opcode::load:
+				case opcode::lod:
 					regs[dst] = memory[regs[src0]];
 					break;
 
-				case opcode::store:
+				case opcode::sto:
 					memory[regs[src0]] = regs[src1];
 					break;
 
@@ -104,39 +104,39 @@ namespace bedrock {
 					regs[dst] = regs[src0] + regs[src1];
 					break;
 
-				case opcode::subtract:
+				case opcode::sub:
 					regs[dst] = regs[src0] - regs[src1];
 					break;
 
-				case opcode::multiply:
+				case opcode::mul:
 					regs[dst] = regs[src0] * regs[src1];
 					break;
 
-				case opcode::divide:
+				case opcode::div:
 					regs[dst] = regs[src1] ? regs[src0] / regs[src1] : 0xffff;
 					break;
 
-				case opcode::shift_left:
+				case opcode::shl:
 					regs[dst] = regs[src0] << src1;
 					break;
 
-				case opcode::shift_right:
+				case opcode::shr:
 					regs[dst] = regs[src0] >> src1;
 					break;
 
-				case opcode::logic_and:
+				case opcode::And:
 					regs[dst] = regs[src0] & regs[src1];
 					break;
 
-				case opcode::logic_or:
+				case opcode::lor:
 					regs[dst] = regs[src0] | regs[src1];
 					break;
 
-				case opcode::logic_not:
+				case opcode::Not:
 					regs[dst] = ~regs[src0];
 					break;
 
-				case opcode::serial: {
+				case opcode::srl: {
 					const auto is_other_port = src1 & 0b10;
 					const auto is_write = src1 & 0b1;
 					if (!is_other_port) {
@@ -154,7 +154,7 @@ namespace bedrock {
 					break;
 				}
 
-				case opcode::disk: {
+				case opcode::dsk: {
 					const auto dst_address = regs[dst];
 					// Why not 511? Because RAM is word-addressed
 					if (dst_address & ((sector_size / word_size) - 1)) {
@@ -176,21 +176,24 @@ namespace bedrock {
 		}
 
 		constexpr std::array<std::uint16_t, sector_size / word_size> boot_sector {
-			0x2F58, // set	rf, 0x58 	; rf = 'X'
+			0x2029, // set	r0, 0x29
+			0x0000, // jmp	r0, r0, r0
+
+			0x2F0A, // set	rf, 0xa 	; rf = '\n'
 
 			// Wait for input, stash it
 			0xE000, // srl 	r0, 0x0, r0
 			0x1200, // mov	r2, r0
 
-			// Compare to X
+			// Compare to '\n'
 			0xD10F, // not	r1, rf
 			0xB101, // and	r1, r0, r1
 			0xD000, // not	r0, r0
 			0xB00F, // and	r0, r0, rf
-			0xC001, // or	r0, r0, r1	; r0 is zero if char == 'X'
+			0xC001, // lor	r0, r0, r1	; r0 is zero if char == '\n'
 
-			// If char did not equal X, skip execute jump
-			0x210D, // set	r1, 0xd
+			// If char did not equal '\n', skip execute jump
+			0x210F, // set	r1, 0xf
 			0x0001, // jmp	r0, r0, r1
 
 			// Jump to code buffer
@@ -203,13 +206,13 @@ namespace bedrock {
 			0x8002, // div	r0, r0, r2	; r0 = r2 / r0 (zero iff. r2 < ':')
 
 			// Jump if not decimal to letter computation
-			0x2115, // set	r1, 0x15
+			0x2117, // set	r1, 0x17
 			0x0101, // jmp	r1, r0, r1	; if r0 goto r1
 
 			// Compute decimal and skip letter computation
 			0x2030, // set	r0, 0x30	; r0 = '0'
 			0x6002, // sub	r0, r0, r2	; r0 = r2 - r0
-			0x2117, // set	r1, 0x17
+			0x2119, // set	r1, 0x19
 			0x0111, // jmp	r1, r1, r1
 
 			// Compute letter
@@ -218,7 +221,7 @@ namespace bedrock {
 
 			// Shift letter in
 			0x9E4E, // shl	re, 0x4, re
-			0xCE0E, // or	re,	r0, re
+			0xCE0E, // lor	re,	r0, re
 
 			// Change state
 			0x2001, // set	r0, 0x1
@@ -227,7 +230,7 @@ namespace bedrock {
 			0xB00D, // and	r0, r0, rd
 
 			// Skip write while not needed
-			0x2124, // set	r1, 0x24
+			0x2127, // set	r1, 0x27
 			0x0101, // jmp	r1, r0, r1	; if r0 goto r1
 
 			// Write!
@@ -237,9 +240,166 @@ namespace bedrock {
 			0x40E0, // sto	re, r0
 			0x5C1C, // add	rc, r1, rc
 
+			// Skip newline
+			0xE000, // srl	r0, 0x0, r0
+
 			// Loop!
-			0x2001, // set	r0, 0x1
+			0x2003, // set	r0, 0x3
 			0x0000, // jmp	r0, r0, r0
+
+			0x2032, // set	r0, 0x32
+			0x3100, // lod	r1, r0
+
+			0xE011, // srl	r0, 0x1, r1
+
+			0x2201, // set	r2, 0x1
+			0x5002, // add	r0, r0, r2
+			0x222A, // set	r2, 0x2a
+			0x0212, // jmp	r2, r1, r2
+
+			0x2002, // set	r0, 0x2
+			0x0000, // jmp	r0, r0, r0
+
+			0x0054,
+			0x0079,
+			0x0070,
+			0x0065,
+			0x0020,
+			0x0069,
+			0x006E,
+			0x0020,
+			0x006F,
+			0x006E,
+			0x0065,
+			0x0020,
+			0x0031,
+			0x0036,
+			0x002D,
+			0x0062,
+			0x0069,
+			0x0074,
+			0x0020,
+			0x0069,
+			0x006E,
+			0x0073,
+			0x0074,
+			0x0072,
+			0x0075,
+			0x0063,
+			0x0074,
+			0x0069,
+			0x006F,
+			0x006E,
+			0x0020,
+			0x0070,
+			0x0065,
+			0x0072,
+			0x0020,
+			0x006C,
+			0x0069,
+			0x006E,
+			0x0065,
+			0x0020,
+			0x0069,
+			0x006E,
+			0x0020,
+			0x0061,
+			0x006C,
+			0x006C,
+			0x002D,
+			0x0063,
+			0x0061,
+			0x0070,
+			0x0073,
+			0x0020,
+			0x0068,
+			0x0065,
+			0x0078,
+			0x0061,
+			0x0064,
+			0x0065,
+			0x0063,
+			0x0069,
+			0x006D,
+			0x0061,
+			0x006C,
+			0x002E,
+			0x0020,
+			0x0042,
+			0x0061,
+			0x0073,
+			0x0065,
+			0x0020,
+			0x0061,
+			0x0064,
+			0x0064,
+			0x0072,
+			0x0065,
+			0x0073,
+			0x0073,
+			0x0020,
+			0x0069,
+			0x0073,
+			0x0020,
+			0x0030,
+			0x0078,
+			0x0031,
+			0x0030,
+			0x0030,
+			0x002E,
+			0x0020,
+			0x0041,
+			0x006E,
+			0x0020,
+			0x0065,
+			0x006D,
+			0x0070,
+			0x0074,
+			0x0079,
+			0x0020,
+			0x006C,
+			0x0069,
+			0x006E,
+			0x0065,
+			0x0020,
+			0x0074,
+			0x0072,
+			0x0061,
+			0x006E,
+			0x0073,
+			0x0066,
+			0x0065,
+			0x0072,
+			0x0073,
+			0x0020,
+			0x0063,
+			0x006F,
+			0x006E,
+			0x0074,
+			0x0072,
+			0x006F,
+			0x006C,
+			0x0020,
+			0x0074,
+			0x006F,
+			0x0020,
+			0x0061,
+			0x0073,
+			0x0073,
+			0x0065,
+			0x006D,
+			0x0062,
+			0x006C,
+			0x0065,
+			0x0064,
+			0x0020,
+			0x0063,
+			0x006F,
+			0x0064,
+			0x0065,
+			0x002E,
+			0x000A,
+			0x000A,
 		};
 	}
 }
