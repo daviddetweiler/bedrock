@@ -49,6 +49,7 @@ into memory, then upon encountering an `X`, jumps to the code. Great for self-bo
 ### Peripherals!
 - Should have a terminal
 	- Is it functionally a serial line? I.e. single-byte? Yes!
+- Basically, we have a COM1 and COM2, COM1 is hard-wired to a terminal
 - Should have internal storage
 	- Old-school sector addressing
 	- Programs too big to fit in RAM shall be handled by overlays

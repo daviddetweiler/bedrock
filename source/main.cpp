@@ -27,7 +27,7 @@ namespace bedrock {
 			logic_and,
 			logic_or,
 			logic_not,
-			terminal,
+			serial,
 			disk
 		};
 
@@ -77,8 +77,9 @@ namespace bedrock {
 				switch (op) {
 				case opcode::jump:
 					if (regs[src1]) {
-						regs[dst] = pc;
+						const auto old_pc = pc;
 						pc = regs[src0];
+						regs[dst] = old_pc;
 					}
 
 					break;
@@ -135,13 +136,23 @@ namespace bedrock {
 					regs[dst] = ~regs[src0];
 					break;
 
-				case opcode::terminal:
-					if (src1)
-						std::cout.put(regs[src0]);
-					else
-						regs[dst] = std::cin.get();
+				case opcode::serial: {
+					const auto is_other_port = src1 & 0b1000;
+					const auto is_write = src1 & 0b111;
+					if (!is_other_port) {
+						if (is_write)
+							std::cout.put(regs[src0]);
+						else
+							regs[dst] = std::cin.get();
+					}
+					else {
+						// Until we actually support COM2, we pretend it's connected to a zero emitter
+						if (!is_write)
+							regs[dst] = 0;
+					}
 
 					break;
+				}
 
 				case opcode::disk: {
 					const auto dst_address = regs[dst];
@@ -156,33 +167,78 @@ namespace bedrock {
 						disk.write(reinterpret_cast<char*>(&memory[dst_address]), sector_size);
 					else
 						disk.read(reinterpret_cast<char*>(&memory[dst_address]), sector_size);
+
+					break;
 				}
 				}
 			}
 		}
 
 		constexpr std::array<std::uint16_t, sector_size / word_size> boot_sector {
-			// Set cursor to home
-			0x211B,
-			0xE011,
-			0x215B,
-			0xE011,
-			0x2148,
-			0xE011,
+			0x2F58, // set	rf, 0x58 	; rf = 'X'
 
-			// Clear terminal
-			0x211B,
-			0xE011,
-			0x215B,
-			0xE011,
-			0x2132,
-			0xE011,
-			0x214A,
-			0xE011,
-			
-			// Halt (by unaligned disk read)
-			0x2001,
-			0xF000,
+			// Wait for input, stash it
+			0xE000, // srl 	r0, 0x0, r0
+			0x1200, // mov	r2, r0
+
+			// Compare to X
+			0xD10F, // not	r1, rf
+			0xB101, // and	r1, r0, r1
+			0xD000, // not	r0, r0
+			0xB00F, // and	r0, r0, rf
+			0xC001, // or	r0, r0, r1	; r0 is zero if char == 'X'
+
+			// If char did not equal X, skip execute jump
+			0x210D, // set	r1, 0xd
+			0x0001, // jmp	r0, r0, r1
+
+			// Jump to code buffer
+			0x2101, // set	r1, 0x1
+			0x9181, // shl	r1, 0x8, r1
+			0x0011, // jmp	r0, r1, r1	; if r1 jump to r1
+
+			// Decide range of character
+			0x203A, // set	r0, 0x3a	; r0 = ':'
+			0x8002, // div	r0, r0, r2	; r0 = r2 / r0 (zero iff. r2 < ':')
+
+			// Jump if not decimal to letter computation
+			0x2115, // set	r1, 0x15
+			0x0101, // jmp	r1, r0, r1	; if r0 goto r1
+
+			// Compute decimal and skip letter computation
+			0x2030, // set	r0, 0x30	; r0 = '0'
+			0x6002, // sub	r0, r0, r2	; r0 = r2 - r0
+			0x2117, // set	r1, 0x17
+			0x0111, // jmp	r1, r1, r1
+
+			// Compute letter
+			0x2037, // set	r0, 0x37	; r0 = 'A' - 10
+			0x6002, // sub	r0, r0, r2	; r0 = r2 - r0
+
+			// Shift letter in
+			0x9E4E, // shl	re, 0x4, re
+			0xCE0E, // or	re,	r0, re
+
+			// Change state
+			0x2001, // set	r0, 0x1
+			0x5DD0, // add	rd, rd, r0
+			0x2003, // set	r0, 0x3
+			0xB00D, // and	r0, r0, rd
+
+			// Skip write while not needed
+			0x2124, // set	r1, 0x24
+			0x0101, // jmp	r1, r0, r1	; if r0 goto r1
+
+			// Write!
+			0x2101, // set	r1, 0x1
+			0x9081, // shl	r0, 0x8, r1
+			0x500C, // add	r0, r0, rc
+			0x40E0, // sto	re, r0
+			0x5C1C, // add	rc, r1, rc
+
+			// Loop!
+			0x2001, // set	r0, 0x1
+			0x0000, // jmp	r0, r0, r0
 		};
 	}
 }
@@ -213,5 +269,7 @@ int main(int argc, char** argv)
 
 	machine_state state {path};
 	state.disk.read(reinterpret_cast<char*>(&state.memory[0]), sector_size);
+	std::cout << "\x1b[2J\x1b[H";
 	execute(state);
+	std::cout << "\x1b[2J\x1b[H";
 }
