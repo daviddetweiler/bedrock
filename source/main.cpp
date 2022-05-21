@@ -1,11 +1,7 @@
 #include <array>
-#include <cstddef>
 #include <cstdint>
-#include <cstring>
-#include <filesystem>
-#include <format>
-#include <fstream>
 #include <iostream>
+#include <memory>
 #include <vector>
 
 #include <gsl/gsl>
@@ -27,8 +23,8 @@ namespace bedrock {
 			And,
 			lor,
 			Not,
-			srl,
-			dsk
+			bsr,
+			bsw
 		};
 
 		struct instruction_word {
@@ -42,17 +38,12 @@ namespace bedrock {
 			std::uint16_t pc;
 			std::array<std::uint16_t, 1 << 4> regs;
 			std::vector<std::uint16_t> memory;
-			std::fstream disk;
-
-			machine_state(const std::filesystem::path& disk_file) : pc {}, regs {}, memory(1 << 16), disk {}
-			{
-				disk.exceptions(disk.badbit | disk.failbit);
-				disk.open(disk_file, disk.binary | disk.in | disk.out);
-			}
+			machine_state() : pc {}, regs {}, memory(1 << 16) {}
 		};
 
 		constexpr auto word_size = sizeof(std::uint16_t);
 		constexpr auto sector_size = 512;
+		constexpr auto sector_words = sector_size / word_size;
 		constexpr auto disk_size = sector_size * (1 << 16);
 
 		instruction_word decode(std::uint16_t word) noexcept
@@ -71,7 +62,7 @@ namespace bedrock {
 		void execute(machine_state& state)
 		{
 			auto halt = false;
-			auto& [pc, regs, memory, disk] = state;
+			auto& [pc, regs, memory] = state;
 			while (!halt) {
 				const auto [op, dst, src1, src0] = decode(memory[pc++]);
 				switch (op) {
@@ -136,38 +127,35 @@ namespace bedrock {
 					regs[dst] = ~regs[src0];
 					break;
 
-				case opcode::srl: {
-					const auto is_other_port = src1 & 0b10;
-					const auto is_write = src1 & 0b1;
-					if (!is_other_port) {
-						if (is_write)
-							std::cout.put(regs[src0]);
-						else
-							regs[dst] = std::cin.get();
-					}
-					else {
-						// Until we actually support COM2, we pretend it's connected to a zero emitter
-						if (!is_write)
-							regs[dst] = 0;
+				case opcode::bsr: {
+					const auto port = regs[src0];
+					switch (port) {
+					case 0x0000:
+						regs[dst] = std::cin.get();
+						break;
+
+					default:
+						regs[dst] = 0;
 					}
 
 					break;
 				}
 
-				case opcode::dsk: {
-					const auto dst_address = regs[dst];
-					// Why not 511? Because RAM is word-addressed
-					if (dst_address & ((sector_size / word_size) - 1)) {
-						halt = true;
+				case opcode::bsw: {
+					const auto port = regs[src0];
+					const auto word = regs[src1];
+					switch (port) {
+					case 0x0001:
+						std::cout.put(word);
+						break;
+
+					case 0x0002:
+						halt = word;
+						break;
+
+					default:
 						break;
 					}
-
-					disk.seekg(regs[src0] * sector_size);
-					const auto is_write = src1 & 0b1;
-					if (is_write)
-						disk.write(reinterpret_cast<char*>(&memory[dst_address]), sector_size);
-					else
-						disk.read(reinterpret_cast<char*>(&memory[dst_address]), sector_size);
 
 					break;
 				}
@@ -175,12 +163,12 @@ namespace bedrock {
 			}
 		}
 
-		constexpr std::array<std::uint16_t, sector_size / word_size> boot_sector {
+		constexpr std::array<std::uint16_t, 32> assembler {
 			// Wait for input
-			0xE200, // srl 	r2, 0x0, r0
+			0xE203, // bsr 	r2, r3
 
 			// If char did not equal '\n', skip execute jump
-			0x210a, // set	r1, 0xa
+			0x210A, // set	r1, 0xa
 			0x6021, // sub	r0, r2, r1	; r0 is zero if char == '\n'
 			0x2107, // set	r1, 0x7
 			0x0001, // jmp	r0, r0, r1
@@ -209,7 +197,7 @@ namespace bedrock {
 
 			// Shift letter in
 			0x9F4F, // shl	rf, 0x4, rf
-			0xCF0F, // or	rf,	r0, rf
+			0xCF0F, // lor	rf,	r0, rf
 
 			// Change state
 			0x2201, // set	r2, 0x1
@@ -228,7 +216,7 @@ namespace bedrock {
 			0x5D2D, // add	rd, r2, rd
 
 			// Dispose of trailing newline
-			0xE000, // srl 	r0, 0x0, r0
+			0xE003, // bsr 	r0, r3
 
 			// Loop!
 			0x2100, // set	r1, 0x0
@@ -239,30 +227,10 @@ namespace bedrock {
 
 using namespace bedrock;
 
-int main(int argc, char** argv)
+int main()
 {
-	const gsl::span arguments {argv, gsl::narrow<std::size_t>(argc)};
-	if (argc != 2) {
-		std::cerr << "Usage: vm <disk>\n";
-		return 1;
-	}
-
-	const std::filesystem::path path {arguments[1]};
-	if (!std::filesystem::exists(path)) {
-		std::ofstream file {path, file.binary};
-		file.exceptions(file.badbit | file.failbit);
-		file.write(reinterpret_cast<const char*>(boot_sector.data()), boot_sector.size() * word_size);
-		file.seekp(disk_size - 1);
-		file.put('\0');
-	}
-
-	if (std::filesystem::file_size(path) != disk_size) {
-		std::cerr << "Disk must be " << disk_size << " bytes\n";
-		return 1;
-	}
-
-	machine_state state {path};
-	state.disk.read(reinterpret_cast<char*>(&state.memory[0]), sector_size);
+	machine_state state {};
+	std::copy(assembler.begin(), assembler.end(), state.memory.begin());
 	std::cout << "\x1b[2J\x1b[H";
 	execute(state);
 	std::cout << "\x1b[2J\x1b[H";
