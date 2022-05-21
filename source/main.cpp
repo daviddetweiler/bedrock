@@ -13,22 +13,22 @@
 namespace bedrock {
 	namespace {
 		enum class opcode : std::uint8_t {
-			jump,
-			move,
+			jmp,
+			mov,
 			set,
-			load,
-			store,
+			lod,
+			sto,
 			add,
-			subtract,
-			multiply,
-			divide,
-			shift_left,
-			shift_right,
-			logic_and,
-			logic_or,
-			logic_not,
-			serial,
-			disk
+			sub,
+			mul,
+			div,
+			shl,
+			shr,
+			And,
+			lor,
+			Not,
+			srl,
+			dsk
 		};
 
 		struct instruction_word {
@@ -75,7 +75,7 @@ namespace bedrock {
 			while (!halt) {
 				const auto [op, dst, src1, src0] = decode(memory[pc++]);
 				switch (op) {
-				case opcode::jump:
+				case opcode::jmp:
 					if (regs[src1]) {
 						const auto old_pc = pc;
 						pc = regs[src0];
@@ -84,7 +84,7 @@ namespace bedrock {
 
 					break;
 
-				case opcode::move:
+				case opcode::mov:
 					regs[dst] = regs[src0];
 					break;
 
@@ -92,11 +92,11 @@ namespace bedrock {
 					regs[dst] = src1 << 4 | src0;
 					break;
 
-				case opcode::load:
+				case opcode::lod:
 					regs[dst] = memory[regs[src0]];
 					break;
 
-				case opcode::store:
+				case opcode::sto:
 					memory[regs[src0]] = regs[src1];
 					break;
 
@@ -104,39 +104,39 @@ namespace bedrock {
 					regs[dst] = regs[src0] + regs[src1];
 					break;
 
-				case opcode::subtract:
+				case opcode::sub:
 					regs[dst] = regs[src0] - regs[src1];
 					break;
 
-				case opcode::multiply:
+				case opcode::mul:
 					regs[dst] = regs[src0] * regs[src1];
 					break;
 
-				case opcode::divide:
+				case opcode::div:
 					regs[dst] = regs[src1] ? regs[src0] / regs[src1] : 0xffff;
 					break;
 
-				case opcode::shift_left:
+				case opcode::shl:
 					regs[dst] = regs[src0] << src1;
 					break;
 
-				case opcode::shift_right:
+				case opcode::shr:
 					regs[dst] = regs[src0] >> src1;
 					break;
 
-				case opcode::logic_and:
+				case opcode::And:
 					regs[dst] = regs[src0] & regs[src1];
 					break;
 
-				case opcode::logic_or:
+				case opcode::lor:
 					regs[dst] = regs[src0] | regs[src1];
 					break;
 
-				case opcode::logic_not:
+				case opcode::Not:
 					regs[dst] = ~regs[src0];
 					break;
 
-				case opcode::serial: {
+				case opcode::srl: {
 					const auto is_other_port = src1 & 0b10;
 					const auto is_write = src1 & 0b1;
 					if (!is_other_port) {
@@ -154,7 +154,7 @@ namespace bedrock {
 					break;
 				}
 
-				case opcode::disk: {
+				case opcode::dsk: {
 					const auto dst_address = regs[dst];
 					// Why not 511? Because RAM is word-addressed
 					if (dst_address & ((sector_size / word_size) - 1)) {
@@ -176,21 +176,14 @@ namespace bedrock {
 		}
 
 		constexpr std::array<std::uint16_t, sector_size / word_size> boot_sector {
-			0x2F0A, // set	rf, 0x0a 	; rf = '\n'
-
 			// Wait for input, stash it
 			0xE000, // srl 	r0, 0x0, r0
 			0x1200, // mov	r2, r0
 
-			// Compare to '\n'
-			0xD10F, // not	r1, rf
-			0xB101, // and	r1, r0, r1
-			0xD000, // not	r0, r0
-			0xB00F, // and	r0, r0, rf
-			0xC001, // or	r0, r0, r1	; r0 is zero if char == '\n'
-
 			// If char did not equal '\n', skip execute jump
-			0x210D, // set	r1, 0xd
+			0x210a, // set	r1, 0xa
+			0x6001, // sub	r0, r0, r1	; r0 is zero if char == '\n'
+			0x2109, // set	r1, 0x9
 			0x0001, // jmp	r0, r0, r1
 
 			// Jump to code buffer
@@ -203,13 +196,13 @@ namespace bedrock {
 			0x8002, // div	r0, r0, r2	; r0 = r2 / r0 (zero iff. r2 < ':')
 
 			// Jump if not decimal to letter computation
-			0x2115, // set	r1, 0x15
+			0x2111, // set	r1, 0x11
 			0x0101, // jmp	r1, r0, r1	; if r0 goto r1
 
 			// Compute decimal and skip letter computation
 			0x2030, // set	r0, 0x30	; r0 = '0'
 			0x6002, // sub	r0, r0, r2	; r0 = r2 - r0
-			0x2117, // set	r1, 0x17
+			0x2113, // set	r1, 0x13
 			0x0111, // jmp	r1, r1, r1
 
 			// Compute letter
@@ -217,32 +210,32 @@ namespace bedrock {
 			0x6002, // sub	r0, r0, r2	; r0 = r2 - r0
 
 			// Shift letter in
-			0x9E4E, // shl	re, 0x4, re
-			0xCE0E, // or	re,	r0, re
+			0x9F4F, // shl	rf, 0x4, rf
+			0xCF0F, // or	rf,	r0, rf
 
 			// Change state
 			0x2001, // set	r0, 0x1
-			0x5DD0, // add	rd, rd, r0
+			0x5EE0, // add	re, re, r0
 			0x2003, // set	r0, 0x3
-			0xB00D, // and	r0, r0, rd
+			0xB00E, // and	r0, r0, re
 
 			// Skip write while not needed
-			0x2125, // set	r1, 0x25
+			0x2121, // set	r1, 0x21
 			0x0101, // jmp	r1, r0, r1	; if r0 goto r1
 
 			// Write!
 			0x2101, // set	r1, 0x1
 			0x9081, // shl	r0, 0x8, r1
-			0x500C, // add	r0, r0, rc
-			0x40E0, // sto	re, r0
-			0x5C1C, // add	rc, r1, rc
+			0x500D, // add	r0, r0, rd
+			0x40F0, // sto	rf, r0
+			0x5D1D, // add	rd, r1, rd
 
 			// Dispose of trailing newline
 			0xE000, // srl 	r0, 0x0, r0
 
 			// Loop!
-			0x2001, // set	r0, 0x1
-			0x0000, // jmp	r0, r0, r0
+			0x2100, // set	r1, 0x0
+			0x0001, // jmp	r0, r0, r1
 		};
 	}
 }
