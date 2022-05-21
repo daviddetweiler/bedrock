@@ -3,21 +3,15 @@ import sys
 
 
 def main():
-    if len(sys.argv) != 2:
-        print('Usage: write.py <source-file>')
+    if len(sys.argv) != 3:
+        print('Usage: write.py <source-file> <output-file>')
         return
 
     with open(sys.argv[1], 'r') as source:
-        content = ''.join(source.readlines())
-        data = bytes(content, 'utf-8')
-        if len(data) % 2:
-            data += b'\0'
-
-        for i, b in enumerate(data):
-            if i % 2:
-                print(f'{("0" if b < 0x10 else "") + hex(b).split("x")[1].upper()},')
-            else:
-                print(f'0x{("0" if b < 0x10 else "") + hex(b).split("x")[1].upper()}', end='')
+        with open(sys.argv[2], 'wb') as bin:
+            for line in source.readlines():
+                for word in line.split():
+                    bin.write(struct.pack('B', int(word, base=16)))
 
 
 if __name__ == '__main__':
