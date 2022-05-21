@@ -182,12 +182,11 @@ namespace bedrock {
 			// If char did not equal '\n', skip execute jump
 			0x210a, // set	r1, 0xa
 			0x6021, // sub	r0, r2, r1	; r0 is zero if char == '\n'
-			0x2108, // set	r1, 0x8
+			0x2107, // set	r1, 0x7
 			0x0001, // jmp	r0, r0, r1
 
 			// Jump to code buffer
-			0x2101, // set	r1, 0x1
-			0x9181, // shl	r1, 0x8, r1
+			0x2140, // set	r1, 0x40
 			0x0011, // jmp	r0, r1, r1	; if r1 jump to r1
 
 			// Decide range of character
@@ -195,13 +194,13 @@ namespace bedrock {
 			0x8002, // div	r0, r0, r2	; r0 = r2 / r0 (zero iff. r2 < ':')
 
 			// Jump if not decimal to letter computation
-			0x2110, // set	r1, 0x10
+			0x210F, // set	r1, 0xf
 			0x0101, // jmp	r1, r0, r1	; if r0 goto r1
 
 			// Compute decimal and skip letter computation
 			0x2030, // set	r0, 0x30	; r0 = '0'
 			0x6002, // sub	r0, r0, r2	; r0 = r2 - r0
-			0x2112, // set	r1, 0x12
+			0x2111, // set	r1, 0x11
 			0x0111, // jmp	r1, r1, r1
 
 			// Compute letter
@@ -213,21 +212,20 @@ namespace bedrock {
 			0xCF0F, // or	rf,	r0, rf
 
 			// Change state
-			0x2001, // set	r0, 0x1
-			0x5EE0, // add	re, re, r0
+			0x2201, // set	r2, 0x1
+			0x5EE2, // add	re, re, r2
 			0x2003, // set	r0, 0x3
 			0xB00E, // and	r0, r0, re
 
 			// Skip write while not needed
-			0x2120, // set	r1, 0x20
+			0x211E, // set	r1, 0x1e
 			0x0101, // jmp	r1, r0, r1	; if r0 goto r1
 
 			// Write!
-			0x2101, // set	r1, 0x1
-			0x9081, // shl	r0, 0x8, r1
+			0x2040, // set	r0, 0x40
 			0x500D, // add	r0, r0, rd
 			0x40F0, // sto	rf, r0
-			0x5D1D, // add	rd, r1, rd
+			0x5D2D, // add	rd, r2, rd
 
 			// Dispose of trailing newline
 			0xE000, // srl 	r0, 0x0, r0
