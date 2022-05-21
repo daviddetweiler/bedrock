@@ -137,8 +137,8 @@ namespace bedrock {
 					break;
 
 				case opcode::serial: {
-					const auto is_other_port = src1 & 0b1000;
-					const auto is_write = src1 & 0b111;
+					const auto is_other_port = src1 & 0b10;
+					const auto is_write = src1 & 0b1;
 					if (!is_other_port) {
 						if (is_write)
 							std::cout.put(regs[src0]);
@@ -163,7 +163,8 @@ namespace bedrock {
 					}
 
 					disk.seekg(regs[src0] * sector_size);
-					if (src1)
+					const auto is_write = src1 & 0b1;
+					if (is_write)
 						disk.write(reinterpret_cast<char*>(&memory[dst_address]), sector_size);
 					else
 						disk.read(reinterpret_cast<char*>(&memory[dst_address]), sector_size);
