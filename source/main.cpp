@@ -108,27 +108,27 @@ namespace bedrock {
 				state.regs[dst] = std::cin.get();
 				break;
 
-			case 0x0002:
+			case 0x0001:
 				state.regs[dst] = state.disk0.sector_count;
 				break;
 
-			case 0x0003:
+			case 0x0002:
 				state.regs[dst] = state.disk0.sector;
 				break;
 
-			case 0x0004:
+			case 0x0003:
 				state.regs[dst] = state.disk0.address;
 				break;
 
-			case 0x0005:
+			case 0x0004:
 				state.regs[dst] = state.disk1.sector_count;
 				break;
 
-			case 0x0006:
+			case 0x0005:
 				state.regs[dst] = state.disk1.sector;
 				break;
 
-			case 0x0007:
+			case 0x0006:
 				state.regs[dst] = state.disk1.address;
 				break;
 
@@ -147,31 +147,31 @@ namespace bedrock {
 				break;
 
 			case 0x0001:
-				state.halt = word;
-				break;
-
-			case 0x0002:
 				do_disk_operation(state.disk0, word);
 				break;
 
-			case 0x0003:
+			case 0x0002:
 				state.disk0.sector = word;
 				break;
 
-			case 0x0004:
+			case 0x0003:
 				state.disk0.address = word;
 				break;
 
-			case 0x0005:
+			case 0x0004:
 				do_disk_operation(state.disk1, word);
 				break;
 
-			case 0x0006:
+			case 0x0005:
 				state.disk1.sector = word;
 				break;
 
-			case 0x0007:
+			case 0x0006:
 				state.disk1.address = word;
+				break;
+
+			case 0x0007:
+				state.halt = word;
 				break;
 
 			default:
