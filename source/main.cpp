@@ -1,5 +1,6 @@
 #include <array>
 #include <cstdint>
+#include <fstream>
 #include <iostream>
 #include <memory>
 #include <vector>
@@ -34,17 +35,48 @@ namespace bedrock {
 			std::uint8_t src0;
 		};
 
+		struct disk_controller {
+			std::fstream file;
+			std::uint16_t sector_count;
+			std::uint16_t sector;
+			std::uint16_t address;
+		};
+
 		struct machine_state {
 			std::uint16_t pc;
 			std::array<std::uint16_t, 1 << 4> regs;
 			std::vector<std::uint16_t> memory;
-			machine_state() : pc {}, regs {}, memory(1 << 16) {}
+
+			disk_controller disk0;
+			disk_controller disk1;
+			bool halt;
+
+			machine_state() : pc {}, regs {}, memory(1 << 16), disk0 {}, disk1 {}, halt {false} {}
 		};
 
 		constexpr auto word_size = sizeof(std::uint16_t);
 		constexpr auto sector_size = 512;
 		constexpr auto sector_words = sector_size / word_size;
 		constexpr auto disk_size = sector_size * (1 << 16);
+
+		void do_disk_operation(disk_controller& disk, std::uint16_t control)
+		{
+			if (!disk.file.is_open())
+				return;
+
+			switch (control) {
+			case 1: // read
+				break;
+
+			case 2: // write
+				break;
+
+			default:
+				break;
+			}
+
+			std::terminate();
+		}
 
 		instruction_word decode(std::uint16_t word) noexcept
 		{
@@ -59,20 +91,102 @@ namespace bedrock {
 				gsl::narrow_cast<std::uint8_t>(src0)};
 		}
 
+		void do_jmp(machine_state& state, std::uint8_t dst, std::uint8_t src1, std::uint8_t src0)
+		{
+			if (state.regs[src1]) {
+				const auto old_pc = state.pc;
+				state.pc = state.regs[src0];
+				state.regs[dst] = old_pc;
+			}
+		}
+
+		void do_bsr(machine_state& state, std::uint8_t dst, std::uint8_t src1, std::uint8_t src0)
+		{
+			const auto port = state.regs[src0];
+			switch (port) {
+			case 0x0000:
+				state.regs[dst] = std::cin.get();
+				break;
+
+			case 0x0002:
+				state.regs[dst] = state.disk0.sector_count;
+				break;
+
+			case 0x0003:
+				state.regs[dst] = state.disk0.sector;
+				break;
+
+			case 0x0004:
+				state.regs[dst] = state.disk0.address;
+				break;
+
+			case 0x0005:
+				state.regs[dst] = state.disk1.sector_count;
+				break;
+
+			case 0x0006:
+				state.regs[dst] = state.disk1.sector;
+				break;
+
+			case 0x0007:
+				state.regs[dst] = state.disk1.address;
+				break;
+
+			default:
+				state.regs[dst] = 0;
+			}
+		}
+
+		void do_bsw(machine_state& state, std::uint8_t dst, std::uint8_t src1, std::uint8_t src0)
+		{
+			const auto port = state.regs[src0];
+			const auto word = state.regs[src1];
+			switch (port) {
+			case 0x0000:
+				std::cout.put(word);
+				break;
+
+			case 0x0001:
+				state.halt = word;
+				break;
+
+			case 0x0002:
+				do_disk_operation(state.disk0, word);
+				break;
+
+			case 0x0003:
+				state.disk0.sector = word;
+				break;
+
+			case 0x0004:
+				state.disk0.address = word;
+				break;
+
+			case 0x0005:
+				do_disk_operation(state.disk1, word);
+				break;
+
+			case 0x0006:
+				state.disk1.sector = word;
+				break;
+
+			case 0x0007:
+				state.disk1.address = word;
+				break;
+
+			default:
+				break;
+			}
+		}
+
 		void execute(machine_state& state)
 		{
-			auto halt = false;
-			auto& [pc, regs, memory] = state;
+			auto& [pc, regs, memory, disk0, disk1, halt] = state;
 			while (!halt) {
 				const auto [op, dst, src1, src0] = decode(memory[pc++]);
 				switch (op) {
 				case opcode::jmp:
-					if (regs[src1]) {
-						const auto old_pc = pc;
-						pc = regs[src0];
-						regs[dst] = old_pc;
-					}
-
+					do_jmp(state, dst, src1, src0);
 					break;
 
 				case opcode::mov:
@@ -127,45 +241,33 @@ namespace bedrock {
 					regs[dst] = ~regs[src0];
 					break;
 
-				case opcode::bsr: {
-					const auto port = regs[src0];
-					switch (port) {
-					case 0x0000:
-						regs[dst] = std::cin.get();
-						break;
-
-					default:
-						regs[dst] = 0;
-					}
-
+				case opcode::bsr:
+					do_bsr(state, dst, src1, src0);
 					break;
-				}
 
-				case opcode::bsw: {
-					const auto port = regs[src0];
-					const auto word = regs[src1];
-					switch (port) {
-					case 0x0001:
-						std::cout.put(word);
-						break;
-
-					case 0x0002:
-						halt = word;
-						break;
-
-					default:
-						break;
-					}
-
+				case opcode::bsw:
+					do_bsw(state, dst, src1, src0);
 					break;
-				}
 				}
 			}
 		}
 
+		/*
+			rc, rd, re, and rf are used by the assembler for persistent state. They should be reinitialized to zero
+			before re-entering the assembler loop.
+			What follows is a minimal "return sequence":
+
+			2c00
+			2d00
+			2e00
+			2f00
+			2001
+			000f
+		*/
+
 		constexpr std::array<std::uint16_t, 32> assembler {
 			// Wait for input
-			0xE203, // bsr 	r2, r3
+			0xE20C, // bsr 	r2, rc
 
 			// If char did not equal '\n', skip execute jump
 			0x210A, // set	r1, 0xa
@@ -233,5 +335,4 @@ int main()
 	std::copy(assembler.begin(), assembler.end(), state.memory.begin());
 	std::cout << "\x1b[2J\x1b[H";
 	execute(state);
-	std::cout << "\x1b[2J\x1b[H";
 }
