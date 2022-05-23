@@ -189,18 +189,22 @@ namespace bedrock {
 
 			switch (control) {
 			case 0:
-				disk.file.seekg(sector_size * disk.sector);
-				for (auto i = 0u; i < sector_words; ++i)
-					memory.write(disk.address + i, disk.file.get() << 8 | disk.file.get());
+				if (disk.sector < disk.sector_count) {
+					disk.file.seekg(sector_size * disk.sector);
+					for (auto i = 0u; i < sector_words; ++i)
+						memory.write(disk.address + i, disk.file.get() << 8 | disk.file.get());
+				}
 
 				break;
 
 			case 1:
-				disk.file.seekg(sector_size * disk.sector);
-				for (auto i = 0u; i < sector_size; ++i) {
-					const auto word = memory.read(disk.address + i);
-					disk.file.put(word >> 8);
-					disk.file.put(word & 0xff);
+				if (disk.sector < disk.sector_count) {
+					disk.file.seekg(sector_size * disk.sector);
+					for (auto i = 0u; i < sector_size; ++i) {
+						const auto word = memory.read(disk.address + i);
+						disk.file.put(word >> 8);
+						disk.file.put(word & 0xff);
+					}
 				}
 
 				break;
