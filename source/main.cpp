@@ -42,16 +42,115 @@ namespace bedrock {
 			std::uint16_t address;
 		};
 
+		constexpr std::array<std::uint16_t, 40> assembler {
+			// Detect size of disk0
+			0x2001, // set 	r0, 0x1
+			0xE000, // bsr 	r0, r0
+
+			// Set assembly area base address to after assembler
+			0x2B28, // set 	rb, 0x28
+
+			// Jump to boot shim if disk0 is present (non-zero size)
+			0x2108, // set 	r1, 0x8
+			0x0201, // jmp 	r2, r0, r1
+
+			// disk0 not present, jump to assembler
+			0x210A, // set	r1, 0xa
+			0x0211, // jmp	r2, r1, r1
+			0xC000, // lor	r0, r0, r0	; nop
+
+			// Read disk0 sector zero over ourselves, jump to after assembler
+			0xF0C0, // bsw	rc, r0
+			0x00BB, // jmp	r0, rb, rb
+
+			// Wait for input
+			0xE20C, // bsr 	r2, rc
+
+			// If char did not equal '\n', skip execute jump
+			0x210A, // set	r1, 0xa
+			0x6021, // sub	r0, r2, r1	; r0 is zero if char == '\n'
+			0x2110, // set	r1, 0x10
+			0x0001, // jmp	r0, r0, r1
+
+			// Jump to code buffer
+			0x00BB, // jmp	r0, rb, rb	; if r1 jump to r1
+
+			// Decide range of character
+			0x203A, // set	r0, 0x3a	; r0 = ':'
+			0x8002, // div	r0, r0, r2	; r0 = r2 / r0 (zero iff. r2 < ':')
+
+			// Jump if not decimal to letter computation
+			0x2118, // set	r1, 0x18
+			0x0101, // jmp	r1, r0, r1	; if r0 goto r1
+
+			// Compute decimal and skip letter computation
+			0x2030, // set	r0, 0x30	; r0 = '0'
+			0x6002, // sub	r0, r0, r2	; r0 = r2 - r0
+			0x211A, // set	r1, 0x1a
+			0x0111, // jmp	r1, r1, r1
+
+			// Compute letter
+			0x2057, // set	r0, 0x57	; r0 = 'a' - 10
+			0x6002, // sub	r0, r0, r2	; r0 = r2 - r0
+
+			// Shift letter in
+			0x9F4F, // shl	rf, 0x4, rf
+			0xCF0F, // lor	rf,	r0, rf
+
+			// Change state
+			0x2201, // set	r2, 0x1
+			0x5EE2, // add	re, re, r2
+			0x2003, // set	r0, 0x3
+			0xB00E, // and	r0, r0, re
+
+			// Skip write while not needed
+			0x2126, // set	r1, 0x26
+			0x0101, // jmp	r1, r0, r1	; if r0 goto r1
+
+			// Write!
+			0x50BD, // add	r0, rb, rd
+			0x40F0, // sto	rf, r0
+			0x5D2D, // add	rd, r2, rd
+
+			// Dispose of trailing newline
+			0xE00C, // bsr 	r0, rc
+
+			// Loop!
+			0x210A, // set	r1, 0xa
+			0x0001, // jmp	r0, r0, r1
+		};
+
+		class memory_adapter {
+		public:
+			memory_adapter() : memory((1 << 16) - assembler.size()) {}
+
+			void write(std::uint16_t address, std::uint16_t word)
+			{
+				if (address >= assembler.size())
+					memory[address - assembler.size()] = word;
+			}
+
+			auto read(std::uint16_t address)
+			{
+				if (address >= assembler.size())
+					return memory[address - assembler.size()];
+				else
+					return assembler[address];
+			}
+
+		private:
+			std::vector<std::uint16_t> memory;
+		};
+
 		struct machine_state {
 			std::uint16_t pc;
 			std::array<std::uint16_t, 1 << 4> regs;
-			std::vector<std::uint16_t> memory;
-
+			memory_adapter memory;
 			disk_controller disk0;
 			disk_controller disk1;
 			bool halt;
 
-			machine_state() : pc {}, regs {}, memory(1 << 16), disk0 {}, disk1 {}, halt {false} {}
+			machine_state() : pc {}, regs {}, memory {}, disk0 {}, disk1 {}, halt {false} {}
 		};
 
 		constexpr auto word_size = sizeof(std::uint16_t);
@@ -183,7 +282,7 @@ namespace bedrock {
 		{
 			auto& [pc, regs, memory, disk0, disk1, halt] = state;
 			while (!halt) {
-				const auto [op, dst, src1, src0] = decode(memory[pc++]);
+				const auto [op, dst, src1, src0] = decode(memory.read(pc++));
 				switch (op) {
 				case opcode::jmp:
 					do_jmp(state, dst, src1, src0);
@@ -198,11 +297,11 @@ namespace bedrock {
 					break;
 
 				case opcode::lod:
-					regs[dst] = memory[regs[src0]];
+					regs[dst] = memory.read(regs[src0]);
 					break;
 
 				case opcode::sto:
-					memory[regs[src0]] = regs[src1];
+					memory.write(regs[src0], regs[src1]);
 					break;
 
 				case opcode::add:
@@ -251,79 +350,6 @@ namespace bedrock {
 				}
 			}
 		}
-
-		/*
-			rc, rd, re, and rf are used by the assembler for persistent state. They should be reinitialized to zero
-			before re-entering the assembler loop.
-			What follows is a minimal "return sequence":
-
-			2c00
-			2d00
-			2e00
-			2f00
-			2001
-			000f
-		*/
-
-		constexpr std::array<std::uint16_t, 32> assembler {
-			// Wait for input
-			0xE20C, // bsr 	r2, rc
-
-			// If char did not equal '\n', skip execute jump
-			0x210A, // set	r1, 0xa
-			0x6021, // sub	r0, r2, r1	; r0 is zero if char == '\n'
-			0x2107, // set	r1, 0x7
-			0x0001, // jmp	r0, r0, r1
-
-			// Jump to code buffer
-			0x2140, // set	r1, 0x40
-			0x0011, // jmp	r0, r1, r1	; if r1 jump to r1
-
-			// Decide range of character
-			0x203A, // set	r0, 0x3a	; r0 = ':'
-			0x8002, // div	r0, r0, r2	; r0 = r2 / r0 (zero iff. r2 < ':')
-
-			// Jump if not decimal to letter computation
-			0x210F, // set	r1, 0xf
-			0x0101, // jmp	r1, r0, r1	; if r0 goto r1
-
-			// Compute decimal and skip letter computation
-			0x2030, // set	r0, 0x30	; r0 = '0'
-			0x6002, // sub	r0, r0, r2	; r0 = r2 - r0
-			0x2111, // set	r1, 0x11
-			0x0111, // jmp	r1, r1, r1
-
-			// Compute letter
-			0x2057, // set	r0, 0x57	; r0 = 'a' - 10
-			0x6002, // sub	r0, r0, r2	; r0 = r2 - r0
-
-			// Shift letter in
-			0x9F4F, // shl	rf, 0x4, rf
-			0xCF0F, // lor	rf,	r0, rf
-
-			// Change state
-			0x2201, // set	r2, 0x1
-			0x5EE2, // add	re, re, r2
-			0x2003, // set	r0, 0x3
-			0xB00E, // and	r0, r0, re
-
-			// Skip write while not needed
-			0x211E, // set	r1, 0x1e
-			0x0101, // jmp	r1, r0, r1	; if r0 goto r1
-
-			// Write!
-			0x2040, // set	r0, 0x40
-			0x500D, // add	r0, r0, rd
-			0x40F0, // sto	rf, r0
-			0x5D2D, // add	rd, r2, rd
-
-			// Dispose of trailing newline
-			0xE003, // bsr 	r0, r3
-
-			// Loop!
-			0x2100, // set	r1, 0x0
-			0x0001, // jmp	r0, r0, r1
-		};
 	}
 }
 
@@ -332,7 +358,6 @@ using namespace bedrock;
 int main()
 {
 	machine_state state {};
-	std::copy(assembler.begin(), assembler.end(), state.memory.begin());
 	std::cout << "\x1b[2J\x1b[H";
 	execute(state);
 }
