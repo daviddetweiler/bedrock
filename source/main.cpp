@@ -1,7 +1,12 @@
 #include <array>
+#include <cstddef>
 #include <cstdint>
+#include <cstring>
+#include <exception>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <vector>
 
@@ -9,6 +14,12 @@
 
 namespace bedrock {
 	namespace {
+		constexpr auto word_size = sizeof(std::uint16_t);
+		constexpr auto sector_size = 512;
+		constexpr auto sector_words = sector_size / word_size;
+		constexpr auto disk_size = sector_size * (1 << 16);
+		constexpr auto max_word = std::numeric_limits<std::uint16_t>::max();
+
 		enum class opcode : std::uint8_t {
 			jmp,
 			mov,
@@ -40,12 +51,22 @@ namespace bedrock {
 			std::uint16_t sector_count;
 			std::uint16_t sector;
 			std::uint16_t address;
+
+			disk_controller(gsl::czstring path) : file {}, sector_count {}, sector {}, address {}
+			{
+				if (path) {
+					file.exceptions(file.badbit | file.failbit);
+					file.open(path, file.binary | file.ate | file.in | file.out);
+					const auto n_sectors = file.tellg() / sector_size;
+					sector_count = n_sectors < max_word ? gsl::narrow<std::uint16_t>(n_sectors) : max_word;
+				}
+			}
 		};
 
 		constexpr std::array<std::uint16_t, 40> assembler {
 			// Detect size of disk0
 			0x2001, // set 	r0, 0x1
-			0xE000, // bsr 	r0, r0
+			0xEB00, // bsr 	rb, r0
 
 			// Set assembly area base address to after assembler
 			0x2B28, // set 	rb, 0x28
@@ -150,31 +171,43 @@ namespace bedrock {
 			disk_controller disk1;
 			bool halt;
 
-			machine_state() : pc {}, regs {}, memory {}, disk0 {}, disk1 {}, halt {false} {}
+			machine_state(gsl::czstring disk0_path, gsl::czstring disk1_path) :
+				pc {},
+				regs {},
+				memory {},
+				disk0 {disk0_path},
+				disk1 {disk1_path},
+				halt {false}
+			{
+			}
 		};
 
-		constexpr auto word_size = sizeof(std::uint16_t);
-		constexpr auto sector_size = 512;
-		constexpr auto sector_words = sector_size / word_size;
-		constexpr auto disk_size = sector_size * (1 << 16);
-
-		void do_disk_operation(disk_controller& disk, std::uint16_t control)
+		void do_disk_operation(disk_controller& disk, memory_adapter& memory, std::uint16_t control)
 		{
 			if (!disk.file.is_open())
 				return;
 
 			switch (control) {
-			case 1: // read
+			case 0:
+				disk.file.seekg(sector_size * disk.sector);
+				for (auto i = 0u; i < sector_words; ++i)
+					memory.write(disk.address + i, disk.file.get() << 8 | disk.file.get());
+
 				break;
 
-			case 2: // write
+			case 1:
+				disk.file.seekg(sector_size * disk.sector);
+				for (auto i = 0u; i < sector_size; ++i) {
+					const auto word = memory.read(disk.address + i);
+					disk.file.put(word >> 8);
+					disk.file.put(word & 0xff);
+				}
+
 				break;
 
 			default:
 				break;
 			}
-
-			std::terminate();
 		}
 
 		instruction_word decode(std::uint16_t word) noexcept
@@ -246,7 +279,7 @@ namespace bedrock {
 				break;
 
 			case 0x0001:
-				do_disk_operation(state.disk0, word);
+				do_disk_operation(state.disk0, state.memory, word);
 				break;
 
 			case 0x0002:
@@ -258,7 +291,7 @@ namespace bedrock {
 				break;
 
 			case 0x0004:
-				do_disk_operation(state.disk1, word);
+				do_disk_operation(state.disk1, state.memory, word);
 				break;
 
 			case 0x0005:
@@ -355,9 +388,36 @@ namespace bedrock {
 
 using namespace bedrock;
 
-int main()
+int main(int argc, char** argv)
 {
-	machine_state state {};
-	std::cout << "\x1b[2J\x1b[H";
-	execute(state);
+	const gsl::span arguments {argv, gsl::narrow<std::size_t>(argc)};
+	if (argc != 3) {
+		std::cout << "Usage: vm <disk0> <disk1>\n";
+		std::cout << "Use -- to omit a disk file.\n";
+		return 0;
+	}
+
+	const auto nullptr_if_none = [](auto path) { return std::strcmp(path, "--") == 0 ? nullptr : path; };
+	const auto check_path = [](auto path) {
+		if (!path || std::filesystem::exists(path))
+			return true;
+
+		std::cerr << "File \"" << path << "\" does not exist.\n";
+
+		return false;
+	};
+
+	const auto disk0 = nullptr_if_none(arguments[1]);
+	const auto disk1 = nullptr_if_none(arguments[2]);
+	if (!(check_path(disk0) && check_path(disk1)))
+		return 1;
+
+	try {
+		machine_state state {disk0, disk1};
+		execute(state);
+	}
+	catch (std::exception& error) {
+		std::cerr << "Encountered fatal error: \"" << error.what() << "\"\n";
+		return 1;
+	}
 }
