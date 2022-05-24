@@ -227,12 +227,13 @@ namespace bedrock {
 		void do_jmp(machine_state& state, std::uint8_t dst, std::uint8_t src1, std::uint8_t src0)
 		{
 			if (state.regs[src1]) {
-				state.regs[dst] = state.pc;
+				const auto old_pc = state.pc;
 				state.pc = state.regs[src0];
+				state.regs[dst] = old_pc;
 			}
 		}
 
-		void do_bsr(machine_state& state, std::uint8_t dst, std::uint8_t src1, std::uint8_t src0)
+		void do_bsr(machine_state& state, std::uint8_t dst, std::uint8_t, std::uint8_t src0)
 		{
 			const auto port = state.regs[src0];
 			switch (port) {
