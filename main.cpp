@@ -227,9 +227,8 @@ namespace bedrock {
 		void do_jmp(machine_state& state, std::uint8_t dst, std::uint8_t src1, std::uint8_t src0)
 		{
 			if (state.regs[src1]) {
-				const auto old_pc = state.pc;
+				state.regs[dst] = state.pc;
 				state.pc = state.regs[src0];
-				state.regs[dst] = old_pc;
 			}
 		}
 
@@ -238,7 +237,7 @@ namespace bedrock {
 			const auto port = state.regs[src0];
 			switch (port) {
 			case 0x0000:
-				state.regs[dst] = std::cin.get();
+				state.regs[dst] = std::cin.get() & 0xff;
 				break;
 
 			case 0x0001:
@@ -276,7 +275,7 @@ namespace bedrock {
 			const auto word = state.regs[src1];
 			switch (port) {
 			case 0x0000:
-				std::cout.put(word);
+				std::cout.put(word & 0xff);
 				break;
 
 			case 0x0001:
