@@ -237,9 +237,15 @@ namespace bedrock {
 		{
 			const auto port = state.regs[src0];
 			switch (port) {
-			case 0x0000:
-				state.regs[dst] = std::cin.get() & 0xff;
+			case 0x0000: {
+				char ch {};
+				while (!std::isprint(ch) && ch != '\n')
+					ch = std::cin.get() & 0xff;
+
+				state.regs[dst] = ch;
+
 				break;
+			}
 
 			case 0x0001:
 				state.regs[dst] = state.disk0.sector_count;
@@ -275,9 +281,13 @@ namespace bedrock {
 			const auto port = state.regs[src0];
 			const auto word = state.regs[src1];
 			switch (port) {
-			case 0x0000:
-				std::cout.put(word & 0xff);
+			case 0x0000: {
+				const auto ch = word & 0xff;
+				if (std::isprint(ch) || ch == '\n')
+					std::cout.put(ch);
+
 				break;
+			}
 
 			case 0x0001:
 				do_disk_operation(state.disk0, state.memory, word);

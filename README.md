@@ -62,10 +62,13 @@ Opcode  Effect
 0xf     bus[regs[src0]] = regs[src1];
 ```
 
-### Serial I/O
-Bus address `0x0` supports serial I/O routed through `stdin`/`stdout`. The upper 8 bits are ignored on writes and set to
-zero on read. Writing to the address will immediately write the lower byte to `stdout`. Reading from the address will
-block until a byte is available on `stdin`, then returns that byte.
+### Teletype I/O
+Bus address `0x0` supports teletype-like I/O routed through `stdin`/`stdout`. The upper 8 bits are ignored on writes and
+set to zero on read. Writing to the address will immediately write the lower byte to `stdout`. Reading from the address
+will block until a byte is available on `stdin`, then returns that byte. To more closely approximate a classical
+teletype interface, all characters other than ASCII printable characters or ASCII newline will be silently dropped, not
+written to `stdout`. In particular, this means that the emulator cannot emit binary data or VT control sequences.
+Similarly, non-printable or non-newline characters from `stdin` are also ignored.
 
 ### Disk Controllers
 Bus addresses `0x1`-`0x3` correspond to the disk0 controller, and `0x4`-`0x6`, to disk1. In order, the three bus
