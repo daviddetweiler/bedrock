@@ -44,7 +44,7 @@ these conceptual arrays and a C-like syntax to explain the effects of each instr
 
 ```
 Opcode  Effect
-0x0     if (regs[src1]) { regs[dst] = pc; pc = regs[src0]; }
+0x0     if (regs[src1]) { uint16_t old_pc = pc; pc = regs[src0]; regs[dst] = old_pc; }
 0x1     regs[dst] = regs[src0];
 0x2     regs[dst] = src1 << 4 | src0;
 0x3     regs[dst] = memory[regs[src0]];
