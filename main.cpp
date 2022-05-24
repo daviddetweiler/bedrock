@@ -7,10 +7,7 @@
 #include <fstream>
 #include <iostream>
 #include <limits>
-#include <memory>
 #include <vector>
-
-#include <gsl/gsl>
 
 namespace bedrock {
 	namespace {
@@ -52,13 +49,13 @@ namespace bedrock {
 			std::uint16_t sector;
 			std::uint16_t address;
 
-			disk_controller(gsl::czstring path) : file {}, sector_count {}, sector {}, address {}
+			disk_controller(const char* path) : file {}, sector_count {}, sector {}, address {}
 			{
 				if (path) {
 					file.exceptions(file.badbit | file.failbit);
 					file.open(path, file.binary | file.ate | file.in | file.out);
 					const auto n_sectors = file.tellg() / sector_size;
-					sector_count = n_sectors < max_word ? gsl::narrow<std::uint16_t>(n_sectors) : max_word;
+					sector_count = n_sectors < max_word ? static_cast<std::uint16_t>(n_sectors) : max_word;
 				}
 			}
 		};
@@ -171,7 +168,7 @@ namespace bedrock {
 			disk_controller disk1;
 			bool halt;
 
-			machine_state(gsl::czstring disk0_path, gsl::czstring disk1_path) :
+			machine_state(const char* disk0_path, const char* disk1_path) :
 				pc {},
 				regs {},
 				memory {},
@@ -222,9 +219,9 @@ namespace bedrock {
 			const auto src0 = word & 0x000f;
 			return {
 				static_cast<opcode>(op),
-				gsl::narrow_cast<std::uint8_t>(dst),
-				gsl::narrow_cast<std::uint8_t>(src1),
-				gsl::narrow_cast<std::uint8_t>(src0)};
+				static_cast<std::uint8_t>(dst),
+				static_cast<std::uint8_t>(src1),
+				static_cast<std::uint8_t>(src0)};
 		}
 
 		void do_jmp(machine_state& state, std::uint8_t dst, std::uint8_t src1, std::uint8_t src0)
@@ -394,7 +391,6 @@ using namespace bedrock;
 
 int main(int argc, char** argv)
 {
-	const gsl::span arguments {argv, gsl::narrow<std::size_t>(argc)};
 	if (argc != 3) {
 		std::cout << "Usage: vm <disk0> <disk1>\n";
 		std::cout << "Use -- to omit a disk file.\n";
@@ -411,8 +407,8 @@ int main(int argc, char** argv)
 		return false;
 	};
 
-	const auto disk0 = nullptr_if_none(arguments[1]);
-	const auto disk1 = nullptr_if_none(arguments[2]);
+	const auto disk0 = nullptr_if_none(argv[1]);
+	const auto disk1 = nullptr_if_none(argv[2]);
 	if (!(check_path(disk0) && check_path(disk1)))
 		return 1;
 
