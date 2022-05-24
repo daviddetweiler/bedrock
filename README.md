@@ -26,11 +26,11 @@ registers are supported, along with 16 opcodes. All instructions are one word (1
 format:
 ```
 +-----------------------------------------------+
-| MSB								  LSB 		|
+| MSB                               LSB         |
 +-----------+-----------+-----------+-----------+
-| 4 bits 	| 4 bits 	| 4 bits 	| 4 bits 	|
+| 4 bits    | 4 bits    | 4 bits    | 4 bits    |
 +-----------+-----------+-----------+-----------+
-| op 		| dst 		| src1 		| src0 		|
+| op        | dst       | src1      | src0      |
 +-----------+-----------+-----------+-----------+
 ```
 
@@ -43,23 +43,23 @@ executes the fetched instruction word. The following table of opcodes (field `op
 these conceptual arrays and a C-like syntax to explain the effects of each instruction.
 
 ```
-Opcode	Effect
-0x0		if (regs[src1]) { regs[dst] = pc; pc = regs[src0]; }
-0x1		regs[dst] = regs[src0];
-0x2		regs[dst] = src1 << 4 | src0;
-0x3		regs[dst] = memory[regs[src0]];
-0x4		memory[regs[src0]] = regs[src1];
-0x5		regs[dst] = regs[src0] + regs[src1];
-0x6		regs[dst] = regs[src0] - regs[src1];
-0x7		regs[dst] = regs[src0] * regs[src1];
-0x8		regs[dst] = regs[src1] ? regs[src0] / regs[src1] : 0xffff;
-0x9		regs[dst] = regs[src0] << src1;
-0xa		regs[dst] = regs[src0] >> src1;
-0xb		regs[dst] = regs[src0] & regs[src1];
-0xc		regs[dst] = regs[src0] | regs[src1];
-0xd		regs[dst] = ~regs[src0];
-0xe		regs[dst] = bus[regs[src0]];
-0xf		bus[regs[src0]] = regs[src1];
+Opcode  Effect
+0x0     if (regs[src1]) { regs[dst] = pc; pc = regs[src0]; }
+0x1     regs[dst] = regs[src0];
+0x2     regs[dst] = src1 << 4 | src0;
+0x3     regs[dst] = memory[regs[src0]];
+0x4     memory[regs[src0]] = regs[src1];
+0x5     regs[dst] = regs[src0] + regs[src1];
+0x6     regs[dst] = regs[src0] - regs[src1];
+0x7     regs[dst] = regs[src0] * regs[src1];
+0x8     regs[dst] = regs[src1] ? regs[src0] / regs[src1] : 0xffff;
+0x9     regs[dst] = regs[src0] << src1;
+0xa     regs[dst] = regs[src0] >> src1;
+0xb     regs[dst] = regs[src0] & regs[src1];
+0xc     regs[dst] = regs[src0] | regs[src1];
+0xd     regs[dst] = ~regs[src0];
+0xe     regs[dst] = bus[regs[src0]];
+0xf     bus[regs[src0]] = regs[src1];
 ```
 
 ### Serial I/O
@@ -71,10 +71,10 @@ block until a byte is available on `stdin`, then returns that byte.
 Bus addresses `0x1`-`0x3` correspond to the disk0 controller, and `0x4`-`0x6`, to disk1. In order, the three bus
 addresses that a single controller covers are the following control registers:
 ```
-Bus Offset	Control Register
-+0x0		Command/Size
-+0x1		Sector
-+0x2		Address
+Bus Offset  Control Register
++0x0        Command/Size
++0x1        Sector
++0x2        Address
 ```
 
 Reading from `+0x0` will return the number of 512-byte sectors detected in the disk; this value will be zero if no disk
