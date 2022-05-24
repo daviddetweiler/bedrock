@@ -26,7 +26,7 @@ registers are supported, along with 16 opcodes. All instructions are one word (1
 format:
 ```
 +-----------------------------------------------+
-| MSB                               LSB         |
+| MSB                                 LSB       |
 +-----------+-----------+-----------+-----------+
 | 4 bits    | 4 bits    | 4 bits    | 4 bits    |
 +-----------+-----------+-----------+-----------+
