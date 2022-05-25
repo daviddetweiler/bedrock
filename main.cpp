@@ -21,7 +21,7 @@ namespace bedrock {
 
 		enum class opcode : std::uint8_t {
 			jmp,
-			mov,
+			rhi,
 			set,
 			lod,
 			sto,
@@ -164,6 +164,7 @@ namespace bedrock {
 
 		struct machine_state {
 			std::uint16_t pc;
+			std::uint16_t hi;
 			std::array<std::uint16_t, 1 << 4> regs;
 			memory_adapter memory;
 			disk_controller disk0;
@@ -174,6 +175,7 @@ namespace bedrock {
 
 			machine_state(const char* disk0_path, const char* disk1_path) :
 				pc {},
+				hi {},
 				regs {},
 				memory {},
 				disk0 {disk0_path},
@@ -347,7 +349,7 @@ namespace bedrock {
 
 		void execute(machine_state& state)
 		{
-			auto& [pc, regs, memory, disk0, disk1, halt, counter, log] = state;
+			auto& [pc, hi, regs, memory, disk0, disk1, halt, counter, log] = state;
 			while (!halt) {
 				const auto [op, dst, src1, src0] = decode(memory.read(pc++));
 				switch (op) {
@@ -355,8 +357,8 @@ namespace bedrock {
 					do_jmp(state, dst, src1, src0);
 					break;
 
-				case opcode::mov:
-					regs[dst] = regs[src0];
+				case opcode::rhi:
+					regs[dst] = hi;
 					break;
 
 				case opcode::set:
@@ -371,21 +373,41 @@ namespace bedrock {
 					memory.write(regs[src0], regs[src1]);
 					break;
 
-				case opcode::add:
-					regs[dst] = regs[src0] + regs[src1];
+				case opcode::add: {
+					const std::uint32_t a {regs[src0]};
+					const std::uint32_t b {regs[src1]};
+					const auto c = a + b;
+					regs[dst] = c & 0xffff;
+					hi = c >> 16;
 					break;
+				}
 
-				case opcode::sub:
-					regs[dst] = regs[src0] - regs[src1];
+				case opcode::sub: {
+					const std::uint32_t a {regs[src0]};
+					const std::uint32_t b {regs[src1]};
+					const auto c = a - b;
+					regs[dst] = c & 0xffff;
+					hi = c >> 16;
 					break;
+				}
 
-				case opcode::mul:
-					regs[dst] = regs[src0] * regs[src1];
+				case opcode::mul: {
+					const std::uint32_t a {regs[src0]};
+					const std::uint32_t b {regs[src1]};
+					const auto c = a * b;
+					regs[dst] = c & 0xffff;
+					hi = c >> 16;
 					break;
+				}
 
-				case opcode::div:
-					regs[dst] = regs[src1] ? regs[src0] / regs[src1] : 0xffff;
+				case opcode::div: {
+					const std::uint32_t a {regs[src0]};
+					const std::uint32_t b {regs[src1]};
+					const std::uint32_t c {b ? a / b : 0xffffffff};
+					regs[dst] = c & 0xffff;
+					hi = c >> 16;
 					break;
+				}
 
 				case opcode::shl:
 					regs[dst] = regs[src0] << src1;
@@ -427,7 +449,7 @@ using namespace bedrock;
 int main(int argc, char** argv)
 {
 	if (argc != 3) {
-		std::cout << "Usage: vm <disk0> <disk1>\n";
+		std::cout << "Usage: bedrock <disk0> <disk1>\n";
 		std::cout << "Use -- to omit a disk file.\n";
 		return 0;
 	}

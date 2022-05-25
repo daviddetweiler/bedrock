@@ -36,23 +36,25 @@ format:
 
 Conceptually, the contents of the memory address space and bus address space can be considered as arrays `mem` and
 `bus`, each consisting of 2^16 words. Importantly, bus and memory addresses refer to _words_, not bytes. Similarly,
-registers may be conceptualized as a 16-word array `regs`. Finally, a 16-bit program counter `pc` contains the memory
-address from which the next instruction word will be read. At startup, memory, registers, and program counter are all
-initialized to zero. At each execution cycle, the emulator reads the instruction at `memory[pc]`, increments `pc`, then
-executes the fetched instruction word. The following table of opcodes (field `op` of the instruction word) will use
-these conceptual arrays and a C-like syntax to explain the effects of each instruction.
+registers may be conceptualized as a 16-word array `regs`. Opcodes `0x5`-`0x8` zero-extend their operands to 32 bits and
+only store the low-order word of the result in the destination register. The high-order word is stored in the internal
+`hi` register, overwriting any previous value. Finally, a 16-bit program counter `pc` contains the memory address from
+which the next instruction word will be read. At startup, memory, registers, `hi`, and `pc` are all initialized to zero.
+In each execution cycle, the emulator reads the instruction at `memory[pc]`, increments `pc`, then executes the fetched
+instruction word. The following table of opcodes (field `op` of the instruction word) will use these conceptual arrays
+and a C-like syntax to explain the effects of each instruction.
 
 ```
 Opcode  Effect
 0x0     if (regs[src1]) { uint16_t old_pc = pc; pc = regs[src0]; regs[dst] = old_pc; }
-0x1     regs[dst] = regs[src0];
+0x1     regs[dst] = hi;
 0x2     regs[dst] = src1 << 4 | src0;
 0x3     regs[dst] = memory[regs[src0]];
 0x4     memory[regs[src0]] = regs[src1];
-0x5     regs[dst] = regs[src0] + regs[src1];
-0x6     regs[dst] = regs[src0] - regs[src1];
-0x7     regs[dst] = regs[src0] * regs[src1];
-0x8     regs[dst] = regs[src1] ? regs[src0] / regs[src1] : 0xffff;
+0x5     hi, regs[dst] = regs[src0] + regs[src1];
+0x6     hi, regs[dst] = regs[src0] - regs[src1];
+0x7     hi, regs[dst] = regs[src0] * regs[src1];
+0x8     hi, regs[dst] = regs[src1] ? regs[src0] / regs[src1] : 0xffffffff;
 0x9     regs[dst] = regs[src0] << src1;
 0xa     regs[dst] = regs[src0] >> src1;
 0xb     regs[dst] = regs[src0] & regs[src1];
