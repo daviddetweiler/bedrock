@@ -168,8 +168,6 @@ namespace bedrock {
 			disk_controller disk0;
 			disk_controller disk1;
 			bool halt;
-			std::uint64_t counter;
-			std::ofstream log;
 
 			machine_state(const char* disk0_path, const char* disk1_path) :
 				pc {},
@@ -178,9 +176,7 @@ namespace bedrock {
 				memory {},
 				disk0 {disk0_path},
 				disk1 {disk1_path},
-				halt {},
-				counter {},
-				log {"teletype-log.txt"}
+				halt {false}
 			{
 			}
 		};
@@ -249,10 +245,6 @@ namespace bedrock {
 					ch = std::cin.get() & 0xff;
 
 				state.regs[dst] = ch;
-				state.log.put(ch);
-
-				if (ch == '\n')
-					state.log.flush();
 
 				break;
 			}
@@ -296,9 +288,6 @@ namespace bedrock {
 				if (std::isprint(ch) || ch == '\n')
 					std::cout.put(ch);
 
-				state.log.put(ch);
-				state.log.flush();
-
 				break;
 			}
 
@@ -337,7 +326,7 @@ namespace bedrock {
 
 		void execute(machine_state& state)
 		{
-			auto& [pc, hi, regs, memory, disk0, disk1, halt, counter, log] = state;
+			auto& [pc, hi, regs, memory, disk0, disk1, halt] = state;
 			while (!halt) {
 				const auto [op, dst, src1, src0] = decode(memory.read(pc++));
 				switch (op) {
@@ -425,8 +414,6 @@ namespace bedrock {
 					do_bsw(state, dst, src1, src0);
 					break;
 				}
-
-				++counter;
 			}
 		}
 	}
@@ -460,14 +447,9 @@ int main(int argc, char** argv)
 	try {
 		machine_state state {disk0, disk1};
 		execute(state);
-		std::cerr << "Machine has halted; executed " << state.counter << " instructions since startup.\n";
 	}
-	catch (const std::exception& error) {
-		std::cerr << "Encountered fatal error: \"" << error.what() << ".\"\n";
-		return 1;
-	}
-	catch (...) {
-		std::cerr << "Encountered unknown fatal error.\n";
+	catch (std::exception& error) {
+		std::cerr << "Encountered fatal error: \"" << error.what() << "\"\n";
 		return 1;
 	}
 }
