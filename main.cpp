@@ -2,13 +2,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <ctime>
 #include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <limits>
-#include <sstream>
 #include <vector>
 
 namespace bedrock {
@@ -182,16 +180,7 @@ namespace bedrock {
 				disk1 {disk1_path},
 				halt {},
 				counter {},
-				log {[] {
-					std::time_t current {};
-					std::time(&current);
-					const auto local = std::localtime(&current);
-					std::stringstream date {};
-					date << local->tm_year + 1900 << '-' << local->tm_mon << '-' << local->tm_mday << '-'
-						 << local->tm_hour << ':' << local->tm_min << ':' << local->tm_sec << "-tapeout.txt";
-
-					return date.str();
-				}()}
+				log {"tapeout.txt"}
 			{
 			}
 		};
@@ -471,7 +460,7 @@ int main(int argc, char** argv)
 	try {
 		machine_state state {disk0, disk1};
 		execute(state);
-		std::cerr << "\n\nMachine has halted; executed " << state.counter << " instructions since startup.\n";
+		std::cerr << "Machine has halted; executed " << state.counter << " instructions since startup.\n";
 	}
 	catch (const std::exception& error) {
 		std::cerr << "Encountered fatal error: \"" << error.what() << ".\"\n";
