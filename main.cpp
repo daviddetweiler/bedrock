@@ -188,12 +188,11 @@ namespace bedrock {
 					const auto local = std::localtime(&current);
 					std::stringstream date {};
 					date << local->tm_year + 1900 << '-' << local->tm_mon << '-' << local->tm_mday << '-'
-						 << local->tm_hour << '-' << local->tm_min << '-' << local->tm_sec << "-tapeout.txt";
+						 << local->tm_hour << ':' << local->tm_min << ':' << local->tm_sec << "-tapeout.txt";
 
 					return date.str();
 				}()}
 			{
-				log.exceptions(log.badbit | log.failbit);
 			}
 		};
 
