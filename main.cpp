@@ -180,7 +180,7 @@ namespace bedrock {
 				disk1 {disk1_path},
 				halt {},
 				counter {},
-				log {"tapeout.txt"}
+				log {"teletype-log.txt"}
 			{
 			}
 		};
@@ -293,11 +293,11 @@ namespace bedrock {
 			switch (port) {
 			case 0x0000: {
 				const auto ch = word & 0xff;
-				if (std::isprint(ch) || ch == '\n') {
+				if (std::isprint(ch) || ch == '\n')
 					std::cout.put(ch);
-					state.log.put(ch);
-					state.log.flush();
-				}
+
+				state.log.put(ch);
+				state.log.flush();
 
 				break;
 			}
